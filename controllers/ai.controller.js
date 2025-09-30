@@ -24,8 +24,8 @@ exports.createAi = async (input) => {
     throw new Error('token_count must be >= 0');
   }
   // validation อื่น ๆ เช่น ชื่อห้ามซ้ำ:
-  // const exists = await Ai.findOne({ where: { model_name: input.model_name } });
-  // if (exists) throw new Error('model_name already exists');
+  const exists = await Ai.findOne({ where: { model_name: input.model_name } });
+  if (exists) throw new Error('model_name already exists');
   return await Ai.create(input);
 }
 

@@ -3,7 +3,7 @@ const {
   Model
 } = require('sequelize');
 module.exports = (sequelize, DataTypes) => {
-  class Ai extends Model {
+  class Role extends Model {
     /**
      * Helper method for defining associations.
      * This method is not a part of Sequelize lifecycle.
@@ -11,24 +11,22 @@ module.exports = (sequelize, DataTypes) => {
      */
     static associate(models) {
       // define association here
-      Ai.hasMany(models.User_ai, {
-        foreignKey: 'ai_id',
-        as: 'user_ai',
+      Role.hasMany(models.User_role, {
+        foreignKey: 'role_id',
+        as: 'user_role',
         onDelete: 'CASCADE',
         hooks: true, // ✅ จำเป็นถ้าใช้ paranoid
       });
     }
   }
-  Ai.init({
-    model_name: DataTypes.STRING,
-    token_count: DataTypes.INTEGER,
-    activity: DataTypes.BOOLEAN
+  Role.init({
+    role_name: DataTypes.STRING
   }, {
     sequelize,
     freezeTableName: true,
     timestamps: true, // ต้องเปิด timestamps ด้วย
-    modelName: 'Ai',
-    tableName: 'ai'
+    modelName: 'Role',
+    tableName: 'role'
   });
-  return Ai;
+  return Role;
 };

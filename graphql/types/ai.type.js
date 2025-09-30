@@ -8,16 +8,10 @@ module.exports = `
     updatedAt: String!
   }
 
-  input CreateAiInput {
+  input AiInput {
     model_name: String!
     token_count: Int!
     activity: Boolean!
-  }
-
-  input UpdateAiInput {
-    model_name: String
-    token_count: Int
-    activity: Boolean
   }
 
   extend type Query {
@@ -26,8 +20,8 @@ module.exports = `
   }
 
   extend type Mutation {
-    createAi(input: CreateAiInput!): Ai!
-    updateAi(id: ID!, input: UpdateAiInput!): Ai!
+    createAi(input: AiInput!): Ai!
+    updateAi(id: ID!, input: AiInput!): Ai!
     deleteAi(id: ID!): Boolean!
   }
 `;

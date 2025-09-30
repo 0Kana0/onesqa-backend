@@ -1,30 +1,34 @@
 const { verifyAccessToken } = require("../utils/jwt.js");
 
 // middleware สำหรับดักบาง api ที่จำเป็นต้องมีการเข้าสุ่ระบบก่อนถึงจะใช้งานได้
-exports.verifyToken = async (req, res, next) => {
+module.exports = function verifyToken(req, res, next) {
   try {
-    const authHeader = req.headers['authorization'];
-    const token = authHeader && authHeader.split(' ')[1]; // แยก Bearer และ Token
-    // console.log(token);
+    // 1) ดึง token จาก "Authorization": "Bearer <token>"
+    const auth = req.headers['authorization'] || '';
+    const [, token] = auth.split(' '); // 'Bearer token'
 
-    if (!token) {
-      return res.send({
-        "message": "ต้องทำการ login ก่อนถึงจะดำเนินการต่อได้"
-      })
+    // (ทางเลือก) รองรับ access token ในคุกกี้ (ถ้าเคยเก็บ)
+    const cookieToken = req.cookies?.accessToken;
+
+    const useToken = token || cookieToken;
+    console.log("useToken", useToken);
+    
+    if (!useToken) {
+      // ไม่มี token ก็ผ่านไป แต่จะไม่มี req.user
+      return next();
     }
 
-    try {
-      // เเปลง jwt กลับมาเป็น json
-      const decoded = verifyAccessToken(token);
-      req.user = decoded;
-    } catch (error) {
-      return res.send({
-        "message": "token ไม่ถูกต้องหรือเป็น token อันเก่า"
-      })
-    }
-
+    const decoded = verifyAccessToken(useToken); // ถ้าไม่ผ่านจะ throw
+    console.log("decoded", decoded);
+    
+    req.user = decoded; // { id, username, ... }
+    console.log("req.user", req.user);
+    
     return next();
-  } catch (error) {
-    console.log(error);
+  } catch (err) {
+    // token ไม่ถูกต้อง/หมดอายุ → ไม่แนบ user แต่ไม่บล็อค
+    // อยาก log ก็ทำได้
+    // console.warn('Invalid access token:', err.message);
+    return next();
   }
 }
