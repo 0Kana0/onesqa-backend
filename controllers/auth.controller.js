@@ -83,6 +83,7 @@ exports.signin = async ({ username, password }, ctx) => {
           user_id: userId,
           ai_id: item.id,
           token_count: 1000000,
+          activity: true,
         });
       }
     } else {
