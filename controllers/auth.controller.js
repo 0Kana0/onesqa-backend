@@ -24,109 +24,133 @@ exports.signin = async ({ username, password }, ctx) => {
   const postData = { username, password };
 
   // ส่ง username กับ password ไปตรวจสอบที่ onesqa
-  try {
-    // ถ้าระบบของ onesqa สามารถใช้งานได้
-    const response = await axios.post(
-      `${process.env.ONESQA_URL}/users/user_login`,
-      postData,
-      {
-        headers: {
-          Accept: "application/json",
-          "X-Auth-ID": process.env.X_AUTH_ID,
-          "X-Auth-Token": process.env.X_AUTH_TOKEN,
-        },
-      }
-    );
 
-    // ถ้าชื่อผู้ใช้หรือรหัสผ่านไม่ถูกต้อง
-    if (response.data.result === "fail") {
-      throw new Error(response.data.desc || "เข้าสู่ระบบไม่สำเร็จ");
-    }
-
-    // ตรวจสอบว่าชื่อผู้ใช้คนนี้ได้ทำการ backup ไว้หรือยัง
-    const exists = await User.findOne({ where: { username } });
-
-    // ถ้ายังให้ทำการ backup ข้อมูลเก็บไว้
-    let userId;
-    if (!exists) {
-      // บันทักข้อมูลผู้ใช่้งานลง db เพื่อ backup
-      const hashed = await hashPassword(password);
-      const user = await User.create({
-        firstname: response.data.data.fname,
-        lastname: response.data.data.lname,
-        username,
-        password: hashed,
-        phone: "",
-        email: response.data.data.email,
-        login_type: "NORMAL",
-        position: response.data.data.position,
-        group_name: response.data.data.group_name,
-        ai_access: true,
-        color_mode: "LIGHT",
-        loginAt: moment(),
-      });
-      userId = user.id;
-
-      // บันทึกข้อมูล role ของผู้ใช้งาน
-      const role_exists = await Role.findOne({
-        where: { role_name: "เจ้าหน้าที่ สมศ" },
-      });
-      const user_role = await User_role.create({
-        user_id: userId,
-        role_id: role_exists.id,
-      });
-
-      // ข้อมูลของ model ของผู้ใช้งาน
-      const ai_exists = await Ai.findAll();
-      for (const item of ai_exists) {
-        const user_ai = await User_ai.create({
-          user_id: userId,
-          ai_id: item.id,
-          token_count: 1000000,
-          activity: true,
-        });
-      }
-    } else {
-      userId = exists.id;
-    }
-
-    // สร้าง token
-    const payload = { username: response.data.data.username, id: userId };
-    const accessToken = generateAccessToken(payload);
-    const refreshToken = generateRefreshToken(payload);
-
-    // เก็บ refreshToken ใน db
-    await RefreshToken.create({
-      token: refreshToken,
-      user_id: userId,
-      expiresAt: moment().add(7, "days").toDate(),
-    });
-
-    // set cookie ผ่าน ctx.res (GraphQL มี res จาก context)
-    ctx.res.cookie("refreshToken", refreshToken, {
-      httpOnly: true,
-      secure: false, // ใช้ true ถ้า HTTPS
-      sameSite: "strict",
-      path: "/",
-      maxAge: 7 * 24 * 60 * 60 * 1000,
-    });
-
-    return {
-      user: {
-        username: response.data.data.username,
-        firstname: response.data.data.fname,
-        lastname: response.data.data.lname,
+  // ถ้าระบบของ onesqa สามารถใช้งานได้
+  const response = await axios.post(
+    `${process.env.ONESQA_URL}/users/user_login`,
+    postData,
+    {
+      headers: {
+        Accept: "application/json",
+        "X-Auth-ID": process.env.X_AUTH_ID,
+        "X-Auth-Token": process.env.X_AUTH_TOKEN,
       },
-      token: accessToken,
-    };
-  } catch (err) {
-    // ถ้าระบบ ONESQA ล่ม ให้ throw กลับไปเหมือน REST (ไม่เปลี่ยน flow)
-    // throw new Error(
-    //   err?.response?.data?.desc || err.message || "เข้าสู่ระบบล้มเหลว"
-    // );
+    }
+  );
 
-    // ทำ login ตามปกติ
+  // ถ้าชื่อผู้ใช้หรือรหัสผ่านไม่ถูกต้อง
+  if (response.data.result === "fail") {
+    throw new Error(response.data.desc || "เข้าสู่ระบบไม่สำเร็จ");
   }
+
+  // ตรวจสอบว่าชื่อผู้ใช้คนนี้ได้ทำการ backup ไว้หรือยัง
+  const exists = await User.findOne({ 
+    include: [
+      {
+        model: User_role,
+        as: "user_role",
+        include: [
+          {
+            model: Role,
+            as: "role", // ต้องตรงกับ alias ใน User_role.belongsTo(...)
+            attributes: ["role_name"], // << ดึงชื่อ role ตรงนี้
+            required: false,
+          },
+        ],
+      }
+    ],
+    where: { username } 
+  });
+
+  // ถ้ายังให้ทำการ backup ข้อมูลเก็บไว้
+  let userId;
+  if (!exists) {
+    // บันทักข้อมูลผู้ใช่้งานลง db เพื่อ backup
+    const hashed = await hashPassword(password);
+    const user = await User.create({
+      firstname: response.data.data.fname,
+      lastname: response.data.data.lname,
+      username: username,
+      password: hashed,
+      phone: "",
+      email: response.data.data.email,
+      login_type: "NORMAL",
+      position: response.data.data.position,
+      group_name: response.data.data.group_name,
+      ai_access: true,
+      color_mode: "LIGHT",
+      loginAt: moment(),
+    });
+    userId = user.id;
+
+    // บันทึกข้อมูล role ของผู้ใช้งาน
+    const role_exists = await Role.findOne({
+      where: { role_name: "เจ้าหน้าที่ สมศ" },
+    });
+    const user_role = await User_role.create({
+      user_id: userId,
+      role_id: role_exists.id,
+    });
+
+    // ข้อมูลของ model ของผู้ใช้งาน
+    const ai_exists = await Ai.findAll();
+    for (const item of ai_exists) {
+      const user_ai = await User_ai.create({
+        user_id: userId,
+        ai_id: item.id,
+        token_count: 1000000,
+        activity: true,
+      });
+    }
+  } else {
+    userId = exists.id;
+  }
+
+  // สร้าง token
+  const payload = { username: response.data.data.username, id: userId };
+  const accessToken = generateAccessToken(payload);
+  const refreshToken = generateRefreshToken(payload);
+
+  // เก็บ refreshToken ใน db
+  await RefreshToken.create({
+    token: refreshToken,
+    user_id: userId,
+    expiresAt: moment().add(7, "days").toDate(),
+  });
+
+  // set cookie ผ่าน ctx.res (GraphQL มี res จาก context)
+  ctx.res.cookie("refreshToken", refreshToken, {
+    httpOnly: true,
+    secure: true,        // ต้องเป็น true เมื่อ sameSite: 'none'
+    sameSite: 'none',    // ข้ามโดเมนต้อง none
+    path: "/",
+    maxAge: 7 * 24 * 60 * 60 * 1000,
+  });
+
+  return {
+    user: {
+      id: userId,
+      username: exists?.username ?? response.data.data.username,
+      firstname: exists?.firstname ?? response.data.data.fname,
+      lastname: exists?.lastname ?? response.data.data.lname,
+      phone: exists?.phone ?? "",
+      email: exists?.email ?? response.data.data.email,
+      login_type: exists?.login_type ?? "NORMAL",
+      position: exists?.position ?? response.data.data.position,
+      group_name: exists?.group_name ?? response.data.data.group_name,
+      ai_access: exists?.ai_access ?? true,
+      color_mode: exists?.color_mode ?? "LIGHT",
+      role_name: exists?.user_role[0]?.role?.role_name ?? "เจ้าหน้าที่ สมศ"
+    },
+    token: accessToken,
+  };
+
+  // ถ้าระบบ ONESQA ล่ม ให้ throw กลับไปเหมือน REST (ไม่เปลี่ยน flow)
+  // throw new Error(
+  //   err?.response?.data?.desc || err.message || "เข้าสู่ระบบล้มเหลว"
+  // );
+
+  // ทำ login ตามปกติ
 };
 
 // ---------- 2) ขอ OTP สำหรับผู้ประเมิน ----------
@@ -143,118 +167,117 @@ exports.signinWithIdennumber = async ({ idennumber, otp_type }, ctx) => {
   };
 
   // ส่ง idennumber ไปตรวจสอบที่ onesqa
-  try {
-    // ถ้าระบบของ onesqa สามารถใช้งานได้
-    await axios.post(
-      `${process.env.ONESQA_URL}/assessments/get_assessor`,
-      postData,
+
+  // ถ้าระบบของ onesqa สามารถใช้งานได้
+  await axios.post(
+    `${process.env.ONESQA_URL}/assessments/get_assessor`,
+    postData,
+    {
+      headers: {
+        Accept: "application/json",
+        "X-Auth-ID": process.env.X_AUTH_ID,
+        "X-Auth-Token": process.env.X_AUTH_TOKEN,
+      },
+    }
+  );
+
+  // ตรวจสอบว่าชื่อผู้ใช้คนนี้ได้ทำการ backup ไว้หรือยัง
+  const exists = await User.findOne({ where: { username: idennumber } });
+
+  // ถ้ายังให้ทำการ backup ข้อมูลเก็บไว้
+  let userId;
+  if (!exists) {
+    // บันทักข้อมูลผู้ใช่้งานลง db เพื่อ backup
+    const user = await User.create({
+      firstname: "testfn",
+      lastname: "testln",
+      username: idennumber,
+      email: "naterzaza1@gmail.com",
+      phone: "0800539193",
+      login_type: "INSPEC",
+      position: "",
+      group_name: "",
+      ai_access: true,
+      color_mode: "LIGHT",
+      loginAt: moment(),
+    });
+    userId = user.id;
+
+    // บันทึกข้อมูล role ของผู้ใช้งาน
+    const role_exists = await Role.findOne({
+      where: { role_name: "ผู้ประเมินภายนอก" },
+    });
+    const user_role = await User_role.create({
+      user_id: userId,
+      role_id: role_exists.id,
+    });
+
+    // ข้อมูลของ model ของผู้ใช้งาน
+    const ai_exists = await Ai.findAll();
+    for (const item of ai_exists) {
+      const user_ai = await User_ai.create({
+        user_id: userId,
+        ai_id: item.id,
+        token_count: 1000000,
+        activity: true,
+      });
+    }
+  }
+
+  // สร้าง OTP แบบสุ่มเลข 6 หลัก
+  const otp = Math.floor(100000 + Math.random() * 900000).toString();
+  // เก็บบัตร บชช กับเลข otp ลง redis
+  await setOtp(idennumber, otp);
+  // เวลา 5 นาทีข้างหน้า
+  const timeIn5Min = moment().add(5, "minutes").format("HH:mm:ss");
+
+  // ถ้าเลือกให้ส่ง otp ทาง sms
+  if (otp_type === "sms") {
+    // เตรียมข้อมูลก่อนส่ง
+    const smsPost = {
+      message: `รหัส OTP ของคุณคือ ${otp} รหัสสามารถใช้ได้ถึง ${timeIn5Min} น.`,
+      phone: "0800539193",
+      sender: "ONESQA",
+    };
+
+    // ส่ง OTP ผ่าน sms
+    const rsp = await axios.post(
+      `${process.env.SMSMKT_URL}/send-message`,
+      smsPost,
       {
         headers: {
           Accept: "application/json",
-          "X-Auth-ID": process.env.X_AUTH_ID,
-          "X-Auth-Token": process.env.X_AUTH_TOKEN,
+          api_key: process.env.SMSMKT_API_KEY,
+          secret_key: process.env.SMSMKT_SECRET_KEY,
         },
       }
     );
 
-    // ตรวจสอบว่าชื่อผู้ใช้คนนี้ได้ทำการ backup ไว้หรือยัง
-    const exists = await User.findOne({ where: { username: idennumber } });
-
-    // ถ้ายังให้ทำการ backup ข้อมูลเก็บไว้
-    let userId;
-    if (!exists) {
-      // บันทักข้อมูลผู้ใช่้งานลง db เพื่อ backup
-      const user = await User.create({
-        firstname: "testfn",
-        lastname: "testln",
-        username: idennumber,
-        email: "naterzaza1@gmail.com",
-        phone: "0800539193",
-        login_type: "INSPEC",
-        position: "",
-        group_name: "",
-        ai_access: true,
-        color_mode: "LIGHT",
-        loginAt: moment(),
-      });
-      userId = user.id;
-
-      // บันทึกข้อมูล role ของผู้ใช้งาน
-      const role_exists = await Role.findOne({
-        where: { role_name: "ผู้ประเมินภายนอก" },
-      });
-      const user_role = await User_role.create({
-        user_id: userId,
-        role_id: role_exists.id,
-      });
-
-      // ข้อมูลของ model ของผู้ใช้งาน
-      const ai_exists = await Ai.findAll();
-      for (const item of ai_exists) {
-        const user_ai = await User_ai.create({
-          user_id: userId,
-          ai_id: item.id,
-          token_count: 1000000,
-          activity: true,
-        });
-      }
+    // ถ้าเบอร์โทรหรือชื่อผู้ส่งไม่ถูกต้อง
+    if (rsp.data.detail !== "OK.") {
+      throw new Error("ส่ง OTP ไม่สำเร็จ");
     }
-
-    // สร้าง OTP แบบสุ่มเลข 6 หลัก
-    const otp = Math.floor(100000 + Math.random() * 900000).toString();
-    // เก็บบัตร บชช กับเลข otp ลง redis
-    await setOtp(idennumber, otp);
-    // เวลา 5 นาทีข้างหน้า
-    const timeIn5Min = moment().add(5, "minutes").format("HH:mm:ss");
-
-    // ถ้าเลือกให้ส่ง otp ทาง sms
-    if (otp_type === "sms") {
-      // เตรียมข้อมูลก่อนส่ง
-      const smsPost = {
-        message: `รหัส OTP ของคุณคือ ${otp} รหัสสามารถใช้ได้ถึง ${timeIn5Min} น.`,
-        phone: "0800539193",
-        sender: "ONESQA",
-      };
-
-      // ส่ง OTP ผ่าน sms
-      const rsp = await axios.post(
-        `${process.env.SMSMKT_URL}/send-message`,
-        smsPost,
-        {
-          headers: {
-            Accept: "application/json",
-            api_key: process.env.SMSMKT_API_KEY,
-            secret_key: process.env.SMSMKT_SECRET_KEY,
-          },
-        }
-      );
-
-      // ถ้าเบอร์โทรหรือชื่อผู้ส่งไม่ถูกต้อง
-      if (rsp.data.detail !== "OK.") {
-        throw new Error("ส่ง OTP ไม่สำเร็จ");
-      }
-      return { message: "OTP ถูกส่งไปที่ SMS แล้ว" };
-    }
-
-    if (otp_type === "email") {
-      await transporter.sendMail({
-        from: `"Send OTP" <${process.env.EMAIL_USER}>`,
-        to: "naterzaza1@gmail.com",
-        subject: "ONESQA",
-        text: `รหัส OTP ของคุณคือ ${otp} รหัสสามารถใช้ได้ถึง ${timeIn5Min} น.`,
-      });
-      return { message: "OTP ถูกส่งไปที่ Email แล้ว" };
-    }
-
-    throw new Error("otp_type ไม่ถูกต้อง");
-  } catch (err) {
-    // ถ้าระบบของ onesqa มีปัญหา
-    // throw new Error(
-    //   err?.response?.data?.desc || err.message || "ขอ OTP ไม่สำเร็จ"
-    // );
-
-    // ทำ login ตามปกติ
+    return { message: "OTP ถูกส่งไปที่ SMS แล้ว" };
   }
+
+  if (otp_type === "email") {
+    await transporter.sendMail({
+      from: `"Send OTP" <${process.env.EMAIL_USER}>`,
+      to: "naterzaza1@gmail.com",
+      subject: "ONESQA",
+      text: `รหัส OTP ของคุณคือ ${otp} รหัสสามารถใช้ได้ถึง ${timeIn5Min} น.`,
+    });
+    return { message: "OTP ถูกส่งไปที่ Email แล้ว" };
+  }
+
+  throw new Error("otp_type ไม่ถูกต้อง");
+
+  // ถ้าระบบของ onesqa มีปัญหา
+  // throw new Error(
+  //   err?.response?.data?.desc || err.message || "ขอ OTP ไม่สำเร็จ"
+  // );
+
+  // ทำ login ตามปกติ
 };
 
 // ---------- 3) ยืนยัน OTP (ผู้ประเมินเข้าสู่ระบบ) ----------
@@ -263,7 +286,23 @@ exports.verifySigninWithIdennumber = async ({ idennumber, otp }, ctx) => {
   if (!valid) throw new Error("OTP ผิดหรือ OTP หมดอายุ");
 
   // เรียกข้อมูลผู้ใช้สำหรับส่ง api
-  const existUser = await User.findOne({ where: { username: idennumber } });
+  const existUser = await User.findOne({ 
+    include: [
+      {
+        model: User_role,
+        as: "user_role",
+        include: [
+          {
+            model: Role,
+            as: "role", // ต้องตรงกับ alias ใน User_role.belongsTo(...)
+            attributes: ["role_name"], // << ดึงชื่อ role ตรงนี้
+            required: false,
+          },
+        ],
+      }
+    ],
+    where: { username: idennumber }
+  });
 
   // สร้าง token
   const payload = { username: idennumber, id: existUser.id };
@@ -288,9 +327,18 @@ exports.verifySigninWithIdennumber = async ({ idennumber, otp }, ctx) => {
 
   return {
     user: {
-      username: idennumber,
-      firstname: existUser.firstname,
-      lastname: existUser.lastname,
+      id: existUser?.id,
+      username: existUser?.username,
+      firstname: existUser?.firstname,
+      lastname: existUser?.lastname,
+      phone: existUser?.phone,
+      email: existUser?.email,
+      login_type: existUser?.login_type,
+      position: existUser?.position,
+      group_name: existUser?.group_name,
+      ai_access: existUser?.ai_access,
+      color_mode: existUser?.color_mode,
+      role_name: existUser?.user_role[0]?.role?.role_name
     },
     token: accessToken,
   };
@@ -317,6 +365,20 @@ exports.refreshToken = async (ctx) => {
 
   // เรียกข้อมูลผู้ใช้สำหรับส่ง api
   const existUser = await User.findOne({
+    include: [
+      {
+        model: User_role,
+        as: "user_role",
+        include: [
+          {
+            model: Role,
+            as: "role", // ต้องตรงกับ alias ใน User_role.belongsTo(...)
+            attributes: ["role_name"], // << ดึงชื่อ role ตรงนี้
+            required: false,
+          },
+        ],
+      }
+    ],
     where: { username: decoded.username },
   });
   // สร้าง token ใหม่
@@ -341,9 +403,18 @@ exports.refreshToken = async (ctx) => {
 
   return {
     user: {
-      username: existUser.username,
-      firstname: existUser.firstname,
-      lastname: existUser.lastname,
+      id: existUser?.id,
+      username: existUser?.username,
+      firstname: existUser?.firstname,
+      lastname: existUser?.lastname,
+      phone: existUser?.phone,
+      email: existUser?.email,
+      login_type: existUser?.login_type,
+      position: existUser?.position,
+      group_name: existUser?.group_name,
+      ai_access: existUser?.ai_access,
+      color_mode: existUser?.color_mode,
+      role_name: existUser?.user_role[0]?.role?.role_name
     },
     token: newAccessToken,
   };

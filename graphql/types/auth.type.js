@@ -3,11 +3,28 @@ module.exports = `
     sms
     email
   }
+  enum LoginType {
+    NORMAL
+    INSPEC
+  }
+  enum ColorMode {
+    LIGHT
+    DARK
+  }
 
   type AuthUser {
+    id: ID!
+    firstname: String!
+    lastname: String!
     username: String!
-    firstname: String
-    lastname: String
+    phone: String!
+    email: String!
+    login_type: LoginType!
+    position: String!
+    group_name: String!
+    ai_access: Boolean!
+    color_mode: ColorMode!
+    role_name: String!
   }
 
   type AuthPayload {

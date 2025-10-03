@@ -13,6 +13,7 @@ const verifyToken = require('./middleware/auth-middleware');
 
 const PORT = Number(process.env.PORT || 4000);
 const URL = process.env.URL || "http://localhost";
+const FRONTEND_URL = process.env.FRONTEND_URL || "http://localhost:3000";
 
 async function start() {
   await sequelize.authenticate(); // ตรวจการเชื่อมต่อ
@@ -21,7 +22,7 @@ async function start() {
 	app.set("trust proxy", true);
 
 	app.use(cors({
-		origin: (origin, cb) => cb(null, true), // หรือ whitelist โดเมนของคุณ
+    origin: FRONTEND_URL, // หรือลิสต์โดเมนจริงของ frontend
 		credentials: true,                       // ← สำคัญ
 	}));
 	app.use(cookieParser());
