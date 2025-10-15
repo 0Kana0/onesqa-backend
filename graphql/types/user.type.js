@@ -1,4 +1,6 @@
 module.exports = `
+  scalar DateTime     # 👈 เพิ่มตรงนี้
+
   enum LoginType {
     NORMAL
     INSPEC
@@ -15,8 +17,8 @@ module.exports = `
     id: ID!
     user_id: ID!
     role_id: ID!
-    createdAt: String!
-    updatedAt: String!
+    createdAt: DateTime!
+    updatedAt: DateTime!
 
     role: RoleName
   }
@@ -30,8 +32,8 @@ module.exports = `
     ai_id: ID!
     token_count: Int
     activity: Boolean
-    createdAt: String!
-    updatedAt: String!
+    createdAt: DateTime!
+    updatedAt: DateTime!
 
     ai: AiName
   }
@@ -48,8 +50,9 @@ module.exports = `
     group_name: String!
     ai_access: Boolean!
     color_mode: ColorMode!
-    createdAt: String!
-    updatedAt: String!
+    loginAt: DateTime!
+    createdAt: DateTime!
+    updatedAt: DateTime!
 
     # 👇 ตารางลูก (relations)
     user_role: [UserRole!]!

@@ -1,9 +1,11 @@
 module.exports = `
+  scalar DateTime     # 👈 เพิ่มตรงนี้ 
+
   type Role {
     id: ID!
     role_name: String!
-    createdAt: String!
-    updatedAt: String!
+    createdAt: DateTime!
+    updatedAt: DateTime!
   }
 
   input RoleInput {

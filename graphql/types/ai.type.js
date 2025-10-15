@@ -1,11 +1,13 @@
 module.exports = `
+  scalar DateTime     # 👈 เพิ่มตรงนี้
+
   type Ai {
     id: ID!
     model_name: String!
     token_count: Int!
     activity: Boolean!
-    createdAt: String!
-    updatedAt: String!
+    createdAt: DateTime!
+    updatedAt: DateTime!
   }
 
   input AiInput {

@@ -51,6 +51,10 @@ module.exports = `
     otp: String!
   }
 
+  extend type Query {
+    me: AuthUser!
+  }
+
   extend type Mutation {
     signin(input: SigninInput!): AuthPayload!                   # login ปกติ
     signinWithIdennumber(input: SigninWithIdInput!): Message!   # ขอ OTP

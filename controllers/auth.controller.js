@@ -15,6 +15,45 @@ const transporter = require("../config/email-config.js");
 const db = require("../db/models");
 const { User, RefreshToken, User_role, User_ai, Role, Ai } = db;
 
+exports.me = async (ctx) => {
+  console.log("ctx", ctx?.req?.user?.id);
+  
+  const user = await User.findByPk(ctx?.req?.user?.id, {
+    attributes: { exclude: ["password"] }, // กันเผลอส่ง password ออกไป
+    include: [
+      {
+        model: User_role,
+        as: "user_role",
+        include: [
+          {
+            model: Role,
+            as: "role", // ต้องตรงกับ alias ใน User_role.belongsTo(...)
+            attributes: ["role_name"], // << ดึงชื่อ role ตรงนี้
+            required: false,
+          },
+        ],
+      },
+    ],
+  });
+  
+  return(
+    {
+      id: user?.id,
+      username: user?.username,
+      firstname: user?.firstname,
+      lastname: user?.lastname,
+      phone: user?.phone,
+      email: user?.email,
+      login_type: user?.login_type,
+      position: user?.position,
+      group_name: user?.group_name,
+      ai_access: user?.ai_access,
+      color_mode: user?.color_mode,
+      role_name: user?.user_role[0]?.role?.role_name
+    }
+  )
+}
+
 // ---------- 1) login ผู้ใช้ปกติ ----------
 exports.signin = async ({ username, password }, ctx) => {
   if (!username) throw new Error("ชื่อผู้ใช้งานห้ามเป็นค่าว่าง");
@@ -85,7 +124,7 @@ exports.signin = async ({ username, password }, ctx) => {
 
     // บันทึกข้อมูล role ของผู้ใช้งาน
     const role_exists = await Role.findOne({
-      where: { role_name: "เจ้าหน้าที่ สมศ" },
+      where: { role_name: "เจ้าหน้าที่" },
     });
     const user_role = await User_role.create({
       user_id: userId,
@@ -140,7 +179,7 @@ exports.signin = async ({ username, password }, ctx) => {
       group_name: exists?.group_name ?? response.data.data.group_name,
       ai_access: exists?.ai_access ?? true,
       color_mode: exists?.color_mode ?? "LIGHT",
-      role_name: exists?.user_role[0]?.role?.role_name ?? "เจ้าหน้าที่ สมศ"
+      role_name: exists?.user_role[0]?.role?.role_name ?? "เจ้าหน้าที่"
     },
     token: accessToken,
   };
