@@ -20,9 +20,6 @@ exports.getRoleById = async (id) => {
 }
 
 exports.createRole = async (input) => {
-  // if (input.token_count < 0) {
-  //   throw new Error('token_count must be >= 0');
-  // }
   // validation อื่น ๆ เช่น ชื่อห้ามซ้ำ:
   const exists = await Role.findOne({ where: { role_name: input.role_name } });
   if (exists) throw new Error('role_name already exists');
@@ -33,9 +30,6 @@ exports.updateRole = async (id, input) => {
   const row = await Role.findByPk(id);
   if (!row) throw new Error('Role not found');
 
-  // if (input?.token_count != null && input.token_count < 0) {
-  //   throw new Error('token_count must be >= 0');
-  // }
   await row.update(input);
   return row;
 }

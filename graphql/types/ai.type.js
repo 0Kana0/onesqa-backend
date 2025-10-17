@@ -5,14 +5,16 @@ module.exports = `
     id: ID!
     model_name: String!
     token_count: Int!
+    token_all: Int
     activity: Boolean!
     createdAt: DateTime!
     updatedAt: DateTime!
   }
 
   input AiInput {
-    model_name: String!
+    model_name: String
     token_count: Int!
+    token_all: Int
     activity: Boolean!
   }
 

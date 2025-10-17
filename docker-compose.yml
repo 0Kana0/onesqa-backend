@@ -1,0 +1,74 @@
+version: "3.9"
+
+services:
+  # ✅ Node backend service
+  node:
+    image: naterkana/onesqa-backend:0.1
+    container_name: node-backend
+    restart: unless-stopped
+    ports:
+      - "4000:4000"
+
+    # ✅ โหลด environment จากไฟล์ .env
+    env_file:
+      - .env
+
+    environment:
+      NODE_OPTIONS: --max-old-space-size=4096
+      TZ: 'Asia/Bangkok'
+
+    # ✅ ให้แน่ใจว่า mount โฟลเดอร์โปรเจ็กต์ปัจจุบันเข้ามาใน container
+    volumes:
+      - .:/usr/src/app
+      - /etc/localtime:/etc/localtime:ro
+      - /etc/timezone:/etc/timezone:ro
+
+    # ✅ ใช้ path เต็มเพื่อเรียก script
+    command: sh /usr/src/app/entrypoint.sh
+
+    depends_on:
+      #- postgres
+      - redis
+
+    networks:
+      - node-backend
+
+  # # ✅ Postgres Database
+  # postgres:
+  #   image: postgres:15
+  #   container_name: postgres-db
+  #   restart: unless-stopped
+  #   environment:
+  #     POSTGRES_USER: postgres
+  #     POSTGRES_PASSWORD: 1234
+  #     POSTGRES_DB: onesqa_db
+  #     TZ: 'Asia/Bangkok'
+  #   ports:
+  #     - "5432:5432"
+  #   volumes:
+  #     - postgres_data:/var/lib/postgresql/data
+  #     - ./pg_hba.conf:/var/lib/postgresql/data/pg_hba.conf   # ✅ mount ไฟล์ config
+  #   command: postgres -c 'config_file=/var/lib/postgresql/data/postgresql.conf'
+  #   networks:
+  #     - node-backend
+
+  # ✅ Redis service
+  redis:
+    image: redis:7.4
+    container_name: redis-cache
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    command: redis-server --appendonly yes
+    volumes:
+      - redis_data:/data
+    networks:
+      - node-backend
+
+networks:
+  node-backend:
+    driver: bridge
+
+volumes:
+  #postgres_data:
+  redis_data:

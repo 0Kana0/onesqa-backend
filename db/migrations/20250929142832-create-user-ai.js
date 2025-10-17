@@ -30,6 +30,9 @@ module.exports = {
       token_count: {
         type: Sequelize.INTEGER
       },
+      token_all: {
+        type: Sequelize.INTEGER
+      },
       activity: {
         type: Sequelize.BOOLEAN
       },

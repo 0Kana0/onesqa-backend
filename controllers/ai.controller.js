@@ -23,6 +23,9 @@ exports.createAi = async (input) => {
   if (input.token_count < 0) {
     throw new Error('token_count must be >= 0');
   }
+  if (input.token_all < 0) {
+    throw new Error('token_all must be >= 0');
+  }
   // validation อื่น ๆ เช่น ชื่อห้ามซ้ำ:
   const exists = await Ai.findOne({ where: { model_name: input.model_name } });
   if (exists) throw new Error('model_name already exists');
@@ -36,6 +39,14 @@ exports.updateAi = async (id, input) => {
   if (input?.token_count != null && input.token_count < 0) {
     throw new Error('token_count must be >= 0');
   }
+  if (input?.token_all != null && input.token_all < 0) {
+    throw new Error('token_all must be >= 0');
+  }
+
+  if (input.token_count < row.token_count) {
+    throw new Error('จำนวน token ไม่สามารถเเก้ไขให้ลดลงได้');
+  }
+
   await row.update(input);
   return row;
 }

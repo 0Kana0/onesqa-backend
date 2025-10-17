@@ -23,9 +23,8 @@ module.exports = {
         type: Sequelize.STRING
       },
       log_type: {
-        type: 'enum_log_type',
-        allowNull: false,
-        //defaultValue: 'LIGHT',
+        type: Sequelize.ENUM('PROMPT', 'ALERT', 'MODEL', 'PERSONAL', 'GROUP'),
+        allowNull: false
       },
       old_data: {
         type: Sequelize.STRING

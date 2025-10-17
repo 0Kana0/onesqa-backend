@@ -137,8 +137,9 @@ exports.signin = async ({ username, password }, ctx) => {
       const user_ai = await User_ai.create({
         user_id: userId,
         ai_id: item.id,
-        token_count: 1000000,
-        activity: true,
+        token_count: 0,
+        token_all: 0,
+        activity: false,
       });
     }
   } else {
@@ -257,8 +258,9 @@ exports.signinWithIdennumber = async ({ idennumber, otp_type }, ctx) => {
       const user_ai = await User_ai.create({
         user_id: userId,
         ai_id: item.id,
-        token_count: 1000000,
-        activity: true,
+        token_count: 0,
+        token_all: 0,
+        activity: false,
       });
     }
   }

@@ -31,6 +31,7 @@ module.exports = `
     user_id: ID!
     ai_id: ID!
     token_count: Int
+    token_all: Int
     activity: Boolean
     createdAt: DateTime!
     updatedAt: DateTime!
@@ -66,6 +67,7 @@ module.exports = `
   input UserAiInput {
     ai_id: ID!
     token_count: Int
+    token_all: Int
     activity: Boolean
   }
 

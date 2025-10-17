@@ -72,7 +72,17 @@ exports.getByUserId = async (id) => {
 
 exports.updateUser = async (id, input) => {
   return await User.sequelize.transaction(async (t) => {
-    const user = await User.findByPk(id, { transaction: t });
+    const user = await User.findByPk(id, {
+      transaction: t,
+      include: [
+        {
+          model: User_ai,
+          as: "user_ai",
+          required: false,
+        },
+      ],
+    });
+
     if (!user) throw new Error("User not found");
 
     // 1) อัปเดตฟิลด์ปกติ
@@ -81,6 +91,28 @@ exports.updateUser = async (id, input) => {
       user_ai, // แยก relation ออก
       ...userFields
     } = input;
+
+    console.log(user.user_ai);
+    console.log(user_ai);
+
+    // ส่วนของการดักไม่ให้เพิ่ม token ให้กับ user เกินกว่า token ที่เหลืออยู่
+    for (const oldData of user.user_ai) {
+      console.log(oldData.ai_id);
+
+      const newData = user_ai.find((ai) => Number(ai.ai_id) === Number(oldData.ai_id));
+      console.log(newData);
+      // ถ้ามีการเพิ่มจำนวน token
+      if (newData.token_count > oldData.token_count) {
+        const aiData = await Ai.findByPk(Number(oldData.ai_id));
+        console.log(aiData);  
+
+        // ถ้าจำนวน token ที่ต้องการเพิ่มเกินกว่าจำนวน token ที่เหลืออยู่
+        if ((newData.token_count - oldData.token_count) >= aiData.token_count) {
+          console.log("จำนวน token ที่เหลืออยู่ไม่เพียงพอ");    
+          throw new Error('จำนวน token ที่เหลืออยู่ไม่เพียงพอ');    
+        } 
+      }
+    }
 
     if (Object.keys(userFields).length) {
       await user.update(userFields, { transaction: t });
@@ -107,6 +139,7 @@ exports.updateUser = async (id, input) => {
         user_id: id,
         ai_id: it.ai_id,
         token_count: it.token_count ?? null,
+        token_all: it.token_all ?? null,
         activity: typeof it.activity === "boolean" ? it.activity : true,
       }));
       if (bulk.length) {
@@ -120,9 +153,7 @@ exports.updateUser = async (id, input) => {
         {
           model: User_role,
           as: "user_role",
-          include: [
-            { model: Role, as: "role", attributes: ["role_name"] },
-          ],
+          include: [{ model: Role, as: "role", attributes: ["role_name"] }],
         },
         {
           model: User_ai,

@@ -2,21 +2,18 @@
 /** @type {import('sequelize-cli').Migration} */
 module.exports = {
   async up(queryInterface, Sequelize) {
-    await queryInterface.createTable('ai', {
+    await queryInterface.createTable('setting', {
       id: {
         allowNull: false,
         autoIncrement: true,
         primaryKey: true,
         type: Sequelize.INTEGER
       },
-      model_name: {
+      setting_name: {
         type: Sequelize.STRING
       },
-      token_count: {
-        type: Sequelize.INTEGER
-      },
-      token_all: {
-        type: Sequelize.INTEGER
+      setting_detail: {
+        type: Sequelize.STRING
       },
       activity: {
         type: Sequelize.BOOLEAN
@@ -32,6 +29,6 @@ module.exports = {
     });
   },
   async down(queryInterface, Sequelize) {
-    await queryInterface.dropTable('ai');
+    await queryInterface.dropTable('setting');
   }
 };

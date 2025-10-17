@@ -25,6 +25,7 @@ module.exports = (sequelize, DataTypes) => {
     user_id: DataTypes.INTEGER,
     ai_id: DataTypes.INTEGER,
     token_count: DataTypes.INTEGER,
+    token_all: DataTypes.INTEGER,
     activity: DataTypes.BOOLEAN
   }, {
     sequelize,
