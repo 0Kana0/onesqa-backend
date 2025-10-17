@@ -161,8 +161,8 @@ exports.signin = async ({ username, password }, ctx) => {
   // set cookie ผ่าน ctx.res (GraphQL มี res จาก context)
   ctx.res.cookie("refreshToken", refreshToken, {
     httpOnly: true,
-    secure: true,        // ต้องเป็น true เมื่อ sameSite: 'none'
-    sameSite: 'none',    // ข้ามโดเมนต้อง none
+    secure: false,
+    sameSite: "strict",
     path: "/",
     maxAge: 7 * 24 * 60 * 60 * 1000,
   });

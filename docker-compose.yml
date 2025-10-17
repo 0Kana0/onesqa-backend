@@ -47,8 +47,7 @@ services:
       - "5432:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
-      - ./pg_hba.conf:/var/lib/postgresql/data/pg_hba.conf   # ✅ mount ไฟล์ config
-    command: postgres -c 'config_file=/var/lib/postgresql/data/postgresql.conf'
+    #command: postgres -c 'config_file=/var/lib/postgresql/data/postgresql.conf'
     networks:
       - node-backend
 
