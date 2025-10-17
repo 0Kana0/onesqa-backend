@@ -7,6 +7,8 @@ module.exports = `
     token_count: Int!
     token_all: Int
     activity: Boolean!
+    today: Int!
+    average: Int!
     createdAt: DateTime!
     updatedAt: DateTime!
   }

@@ -39,8 +39,11 @@ exports.listUsers = async () => {
 };
 
 exports.getByUserId = async (id) => {
-  return await User.findByPk(id, {
-    attributes: { exclude: ["password"] }, // กันเผลอส่ง password ออกไป
+  const today = 50000;
+  const average = 40000;
+
+  const user = await User.findByPk(id, {
+    attributes: { exclude: ["password"] },
     include: [
       {
         model: User_role,
@@ -68,6 +71,24 @@ exports.getByUserId = async (id) => {
       },
     ],
   });
+
+  if (!user) return null;
+
+  // แปลง Sequelize instance → plain object
+  const userData = user.toJSON();
+
+  // ✅ เพิ่ม today, average ลงในแต่ละ user_ai
+  const userAiWithStats = (userData.user_ai || []).map((ua) => ({
+    ...ua,
+    today,
+    average,
+  }));
+
+  // ✅ แทนค่าใหม่ใน userData
+  return {
+    ...userData,
+    user_ai: userAiWithStats,
+  };
 };
 
 exports.updateUser = async (id, input) => {

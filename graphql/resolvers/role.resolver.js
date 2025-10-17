@@ -15,7 +15,7 @@ module.exports = {
   },
   Mutation: {
     createRole: async (_parent, { input }, ctx) => {
-      requireAuth(ctx); // ต้องล็อกอินก่อน
+      //requireAuth(ctx); // ต้องล็อกอินก่อน
       return await RoleController.createRole(input);
     },
     updateRole: async (_parent, { id, input }, ctx) => {

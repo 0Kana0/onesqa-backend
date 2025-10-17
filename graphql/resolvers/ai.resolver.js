@@ -15,7 +15,7 @@ module.exports = {
   },
   Mutation: {
     createAi: async (_parent, { input }, ctx) => {
-      requireAuth(ctx); // ต้องล็อกอินก่อน
+      //requireAuth(ctx); // ต้องล็อกอินก่อน
       return await AiController.createAi(input);
     },
     updateAi: async (_parent, { id, input }, ctx) => {

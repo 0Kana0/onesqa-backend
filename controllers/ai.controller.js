@@ -10,10 +10,20 @@ const { Ai } = db;
  */
 
 exports.listAis = async () => {
-  return await Ai.findAll({
+  const today = 50000;
+  const average = 40000;
+
+  const items = await Ai.findAll({
     order: [['id', 'ASC']],
+    raw: true, // ✅ คืนค่ามาเป็น plain object ทันที
   });
-}
+
+  return items.map((item) => ({
+    ...item,
+    today,
+    average,
+  }));
+};
 
 exports.getAiById = async (id) => {
   return await Ai.findByPk(id);

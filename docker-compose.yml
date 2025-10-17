@@ -7,7 +7,7 @@ services:
     container_name: node-backend
     restart: unless-stopped
     ports:
-      - "4000:4000"
+      - "4001:4000"
 
     # ✅ โหลด environment จากไฟล์ .env
     env_file:
@@ -27,30 +27,30 @@ services:
     command: sh /usr/src/app/entrypoint.sh
 
     depends_on:
-      #- postgres
+      - postgres
       - redis
 
     networks:
       - node-backend
 
-  # # ✅ Postgres Database
-  # postgres:
-  #   image: postgres:15
-  #   container_name: postgres-db
-  #   restart: unless-stopped
-  #   environment:
-  #     POSTGRES_USER: postgres
-  #     POSTGRES_PASSWORD: 1234
-  #     POSTGRES_DB: onesqa_db
-  #     TZ: 'Asia/Bangkok'
-  #   ports:
-  #     - "5432:5432"
-  #   volumes:
-  #     - postgres_data:/var/lib/postgresql/data
-  #     - ./pg_hba.conf:/var/lib/postgresql/data/pg_hba.conf   # ✅ mount ไฟล์ config
-  #   command: postgres -c 'config_file=/var/lib/postgresql/data/postgresql.conf'
-  #   networks:
-  #     - node-backend
+  # ✅ Postgres Database
+  postgres:
+    image: postgres:15
+    container_name: postgres-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: 1234
+      POSTGRES_DB: onesqa_db
+      TZ: 'Asia/Bangkok'
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./pg_hba.conf:/var/lib/postgresql/data/pg_hba.conf   # ✅ mount ไฟล์ config
+    command: postgres -c 'config_file=/var/lib/postgresql/data/postgresql.conf'
+    networks:
+      - node-backend
 
   # ✅ Redis service
   redis:
@@ -70,5 +70,5 @@ networks:
     driver: bridge
 
 volumes:
-  #postgres_data:
+  postgres_data:
   redis_data:
