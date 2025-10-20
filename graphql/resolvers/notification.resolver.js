@@ -1,13 +1,13 @@
 const { withFilter } = require("graphql-subscriptions");
 const pubsub = require("../../utils/pubsub"); // ✅ ใช้ instance เดียว
-const NotificationController = require('../../controllers/notification.controller');
-const { requireAuth } = require('../../utils/authGuard');
+const NotificationController = require("../../controllers/notification.controller");
+const { requireAuth } = require("../../utils/authGuard");
 
 module.exports = {
   Query: {
-    myNotifications: async (_parent, { user_id }, ctx) => {
-      //requireAuth(ctx); // ต้องล็อกอินก่อน
-      return await NotificationController.myNotifications(user_id);
+    myNotifications: async (_parent, { user_id, first = 20, after }, ctx) => {
+      // requireAuth(ctx);
+      return NotificationController.myNotifications(user_id, { first, after });
     },
   },
 

@@ -11,6 +11,21 @@ module.exports = `
     updatedAt: DateTime!
   }
 
+  type NotificationEdge {
+    node: Notification!
+    cursor: String!
+  }
+
+  type PageInfo {
+    hasNextPage: Boolean!
+    endCursor: String
+  }
+
+  type NotificationConnection {
+    edges: [NotificationEdge!]!
+    pageInfo: PageInfo!
+  }
+
   input NotificationInput {
     title: String
     message: String
@@ -19,7 +34,8 @@ module.exports = `
   }
   
   extend type Query {
-    myNotifications(user_id: ID!): [Notification]
+    # ใช้สำหรับ infinite scroll: เรียกเพิ่มด้วย after = endCursor เดิม
+    myNotifications(first: Int = 20, after: String, user_id: ID!): NotificationConnection!
   }
 
   extend type Mutation {
