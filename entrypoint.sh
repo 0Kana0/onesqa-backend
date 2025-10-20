@@ -8,5 +8,8 @@ npx sequelize-cli db:create || echo "✅ Database already exists, skipping creat
 echo "🟢 Running migrations..."
 npx sequelize-cli db:migrate
 
+echo "🟢 Creare seed data..."
+npx sequelize-cli db:seed:all
+
 echo "🟢 Starting Node server..."
 exec node server.js
