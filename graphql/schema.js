@@ -25,6 +25,9 @@ const logResolver = require("./resolvers/log.resolver");
 const settingType = require("./types/setting.type");
 const settingResolver = require("./resolvers/setting.resolver");
 
+const notificationType = require("./types/notification.type");
+const notificationResolver = require("./resolvers/notification.resolver");
+
 const typeDefs = [
   baseType, 
   aiType, 
@@ -32,7 +35,8 @@ const typeDefs = [
   roleType,
   userType,
   logType,
-  settingType
+  settingType,
+  notificationType
 ];
 const resolvers = [
   aiResolver, 
@@ -40,7 +44,8 @@ const resolvers = [
   roleResolver,
   userResolver,
   logResolver,
-  settingResolver
+  settingResolver,
+  notificationResolver
 ];
 
 const schema = makeExecutableSchema({ typeDefs, resolvers });

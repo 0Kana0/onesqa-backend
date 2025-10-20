@@ -116,7 +116,7 @@ exports.signin = async ({ username, password }, ctx) => {
       login_type: "NORMAL",
       position: response.data.data.position,
       group_name: response.data.data.group_name,
-      ai_access: true,
+      ai_access: false,
       color_mode: "LIGHT",
       loginAt: moment(),
     });
@@ -139,7 +139,6 @@ exports.signin = async ({ username, password }, ctx) => {
         ai_id: item.id,
         token_count: 0,
         token_all: 0,
-        activity: false,
       });
     }
   } else {
@@ -178,7 +177,7 @@ exports.signin = async ({ username, password }, ctx) => {
       login_type: exists?.login_type ?? "NORMAL",
       position: exists?.position ?? response.data.data.position,
       group_name: exists?.group_name ?? response.data.data.group_name,
-      ai_access: exists?.ai_access ?? true,
+      ai_access: exists?.ai_access ?? false,
       color_mode: exists?.color_mode ?? "LIGHT",
       role_name: exists?.user_role[0]?.role?.role_name ?? "เจ้าหน้าที่"
     },
@@ -237,7 +236,7 @@ exports.signinWithIdennumber = async ({ idennumber, otp_type }, ctx) => {
       login_type: "INSPEC",
       position: "",
       group_name: "",
-      ai_access: true,
+      ai_access: false,
       color_mode: "LIGHT",
       loginAt: moment(),
     });
@@ -260,7 +259,6 @@ exports.signinWithIdennumber = async ({ idennumber, otp_type }, ctx) => {
         ai_id: item.id,
         token_count: 0,
         token_all: 0,
-        activity: false,
       });
     }
   }

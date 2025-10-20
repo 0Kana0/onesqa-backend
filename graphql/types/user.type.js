@@ -32,7 +32,6 @@ module.exports = `
     ai_id: ID!
     token_count: Int
     token_all: Int
-    activity: Boolean
     today: Int!
     average: Int!
     createdAt: DateTime!
@@ -70,7 +69,6 @@ module.exports = `
     ai_id: ID!
     token_count: Int
     token_all: Int
-    activity: Boolean
   }
 
   input UserInput {

@@ -161,7 +161,6 @@ exports.updateUser = async (id, input) => {
         ai_id: it.ai_id,
         token_count: it.token_count ?? null,
         token_all: it.token_all ?? null,
-        activity: typeof it.activity === "boolean" ? it.activity : true,
       }));
       if (bulk.length) {
         await User_ai.bulkCreate(bulk, { transaction: t });

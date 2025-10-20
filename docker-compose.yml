@@ -41,7 +41,7 @@ services:
     environment:
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: 1234
-      POSTGRES_DB: onesqa_db
+      POSTGRES_DB: onesqa_v1_db
       TZ: 'Asia/Bangkok'
     ports:
       - "5432:5432"

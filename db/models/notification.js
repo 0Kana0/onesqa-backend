@@ -3,7 +3,7 @@ const {
   Model
 } = require('sequelize');
 module.exports = (sequelize, DataTypes) => {
-  class User_ai extends Model {
+  class Notification extends Model {
     /**
      * Helper method for defining associations.
      * This method is not a part of Sequelize lifecycle.
@@ -11,27 +11,23 @@ module.exports = (sequelize, DataTypes) => {
      */
     static associate(models) {
       // define association here
-      User_ai.belongsTo(models.User, { 
+      Notification.belongsTo(models.User, { 
         foreignKey: 'user_id', 
         as: 'user' 
       });
-      User_ai.belongsTo(models.Ai, { 
-        foreignKey: 'ai_id', 
-        as: 'ai' 
-      });
     }
   }
-  User_ai.init({
-    user_id: DataTypes.INTEGER,
-    ai_id: DataTypes.INTEGER,
-    token_count: DataTypes.INTEGER,
-    token_all: DataTypes.INTEGER,
+  Notification.init({
+    title: DataTypes.STRING,
+    message: DataTypes.TEXT,
+    type: DataTypes.STRING,
+    user_id: DataTypes.INTEGER
   }, {
     sequelize,
     freezeTableName: true,
     timestamps: true, // ต้องเปิด timestamps ด้วย
-    modelName: 'User_ai',
-    tableName: 'user_ai'
+    modelName: 'Notification',
+    tableName: 'notification'
   });
-  return User_ai;
+  return Notification;
 };

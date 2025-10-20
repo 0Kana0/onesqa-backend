@@ -2,12 +2,21 @@
 /** @type {import('sequelize-cli').Migration} */
 module.exports = {
   async up(queryInterface, Sequelize) {
-    await queryInterface.createTable('user_ai', {
+    await queryInterface.createTable('notification', {
       id: {
         allowNull: false,
         autoIncrement: true,
         primaryKey: true,
         type: Sequelize.INTEGER
+      },
+      title: {
+        type: Sequelize.STRING
+      },
+      message: {
+        type: Sequelize.TEXT
+      },
+      type: {
+        type: Sequelize.STRING
       },
       user_id: {
         type: Sequelize.INTEGER,
@@ -17,21 +26,6 @@ module.exports = {
           key: 'id'
         },
         onDelete: 'CASCADE', // ✅ สำคัญ!
-      },
-      ai_id: {
-        type: Sequelize.INTEGER,
-        allowNull: false,
-        references: {
-          model: 'ai', // ชื่อ table ใน DB
-          key: 'id'
-        },
-        onDelete: 'CASCADE', // ✅ สำคัญ!
-      },
-      token_count: {
-        type: Sequelize.INTEGER
-      },
-      token_all: {
-        type: Sequelize.INTEGER
       },
       createdAt: {
         allowNull: false,
@@ -44,6 +38,6 @@ module.exports = {
     });
   },
   async down(queryInterface, Sequelize) {
-    await queryInterface.dropTable('user_ai');
+    await queryInterface.dropTable('notification');
   }
 };
