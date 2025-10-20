@@ -5,7 +5,7 @@ const { requireAuth } = require('../../utils/authGuard');
 module.exports = {
   Query: {
     roles: async (_parent, args, ctx) => {
-      requireAuth(ctx); // ต้องล็อกอินก่อน
+      //requireAuth(ctx); // ต้องล็อกอินก่อน
       return await RoleController.listRoles();
     },
     role: async (_parent, { id }, ctx) => {
