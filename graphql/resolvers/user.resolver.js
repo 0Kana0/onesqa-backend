@@ -15,7 +15,7 @@ module.exports = {
 	Mutation: {
 		updateUser: async (_parent, { id, input }, ctx) => {
 			requireAuth(ctx); // ต้องล็อกอินก่อน
-			return await UserController.updateUser(id, input);
+			return await UserController.updateUser(id, input, ctx);
 		},
 		deleteUser: async (_parent, { id }, ctx) => {
 			//requireAuth(ctx); // ต้องล็อกอินก่อน

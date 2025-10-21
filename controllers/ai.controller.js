@@ -2,6 +2,7 @@
 const { Op } = require('sequelize');
 const db = require('../db/models'); // หรือ '../../db/models' ถ้าโปรเจกต์คุณใช้ path นั้น
 const { Ai } = db;
+const { auditLog } = require('../utils/auditLog'); // ปรับ path ให้ตรง
 
 /**
  * แยก DB logic สำหรับ Ai ออกมา
@@ -42,7 +43,7 @@ exports.createAi = async (input) => {
   return await Ai.create(input);
 }
 
-exports.updateAi = async (id, input) => {
+exports.updateAi = async (id, input, ctx) => {
   const row = await Ai.findByPk(id);
   if (!row) throw new Error('Ai not found');
 
@@ -55,6 +56,38 @@ exports.updateAi = async (id, input) => {
 
   if (input.token_count < row.token_count) {
     throw new Error('จำนวน token ไม่สามารถเเก้ไขให้ลดลงได้');
+  }
+
+  console.log("row", row);
+  console.log("input", input);
+
+  //ถ้ามีการเปลี่ยนเเปลงสถานะ ให้ทำการเก็บ log ไว้
+  if (row.activity !== input.activity) {
+    message = `กำหนด AI Access (${row.model_name})`
+
+    await auditLog({
+      ctx,
+      log_type: 'MODEL',
+      old_data: message,
+      new_data: message,
+      old_status: row.activity,
+      new_status: input?.activity,
+    });
+  }
+
+  //ถ้ามีการเปลี่ยนเเปลงจำนวน token ให้ทำการเก็บ log ไว้
+  if (row.token_count !== input.token_count) {
+    old_message = `จำนวน Token ของ Model (${row.model_name}) ${row.token_count.toLocaleString()}`
+    new_message = `จำนวน Token ของ Model (${row.model_name}) ${input.token_count.toLocaleString()}`
+
+    await auditLog({
+      ctx,
+      log_type: 'MODEL',
+      old_data: old_message,
+      new_data: new_message,
+      old_status: null,
+      new_status: null,
+    });
   }
 
   await row.update(input);

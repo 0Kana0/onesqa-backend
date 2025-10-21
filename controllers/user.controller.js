@@ -2,6 +2,8 @@
 const { Op } = require("sequelize");
 const db = require("../db/models"); // หรือ '../../db/models' ถ้าโปรเจกต์คุณใช้ path นั้น
 const { User, User_role, User_ai, Role, Ai } = db;
+const { auditLog } = require('../utils/auditLog'); // ปรับ path ให้ตรง
+const { notifyUser } = require('../utils/notifier') // ที่ไฟล์ service/controller ของคุณ
 
 exports.listUsers = async () => {
   return await User.findAll({
@@ -91,7 +93,7 @@ exports.getByUserId = async (id) => {
   };
 };
 
-exports.updateUser = async (id, input) => {
+exports.updateUser = async (id, input, ctx) => {
   return await User.sequelize.transaction(async (t) => {
     const user = await User.findByPk(id, {
       transaction: t,
@@ -99,7 +101,14 @@ exports.updateUser = async (id, input) => {
         {
           model: User_ai,
           as: "user_ai",
-          required: false,
+          include: [
+            {
+              model: Ai,
+              as: "ai", // ต้องตรงกับ alias ใน User_role.belongsTo(...)
+              attributes: ["model_name"], // << ดึงชื่อ role ตรงนี้
+              required: false,
+            },
+          ],
         },
       ],
     });
@@ -133,6 +142,80 @@ exports.updateUser = async (id, input) => {
             console.log("จำนวน token ที่เหลืออยู่ไม่เพียงพอ");    
             throw new Error('จำนวน token ที่เหลืออยู่ไม่เพียงพอ');    
           } 
+        }
+      }
+    }
+    
+    // ถ้ามีการเปลี่ยนแปลงสถานะ ให้ทำการเก็บ log ไว้
+    if (user.ai_access !== input.ai_access && input.ai_access !== undefined) {
+      message = `กำหนด AI Access ของผู้ใช้งาน (${user.firstname} ${user.lastname})`
+
+      await auditLog({
+        ctx,
+        log_type: 'PERSONAL',
+        old_data: message,
+        new_data: message,
+        old_status: user.ai_access,
+        new_status: input?.ai_access,
+      });
+
+      const toThaiApproval = (val) => {
+        // รองรับ boolean, number, และ string ('true'/'false', '1'/'0')
+        if (typeof val === 'string') return ['true', '1', 'yes', 'y'].includes(val.toLowerCase());
+        if (typeof val === 'number') return val === 1;
+        return !!val;
+      };
+      const label = (val) => (toThaiApproval(val) ? 'อนุมัติ' : 'ไม่อนุมัติ');
+
+      // ... ภายในฟังก์ชัน
+      await notifyUser({
+        userId: id,
+        title: 'เเจ้งเตือนตั้งค่า Model ของผู้ใช้งาน',
+        message: `กำหนด AI Access ของผู้ใช้งาน จาก ${label(user.ai_access)} เป็น ${label(input?.ai_access)}`,
+        type: 'INFO',
+
+        // ส่งเข้ามาจาก scope ปัจจุบัน
+        to: user.email,
+
+        // ถ้ามี transaction:
+        // transaction: t,
+      });
+    }
+
+    //ถ้ามีการเปลี่ยนเเปลงจำนวน token ให้ทำการเก็บ log ไว้
+    if (Array.isArray(user_ai)) {
+      for (const oldData of user.user_ai) {
+        console.log("oldData", oldData.ai.model_name, oldData.token_count);
+
+        const newData = user_ai.find((ai) => Number(ai.ai_id) === Number(oldData.ai_id));
+        console.log("newData", newData, newData.token_count);
+
+        if (oldData.token_count !== newData.token_count) {
+          old_message = `จำนวน Token ของ Model (${oldData.ai.model_name}) ของผู้ใช้งาน (${user.firstname} ${user.lastname}) ${oldData.token_count.toLocaleString()}`
+          new_message = `จำนวน Token ของ Model (${oldData.ai.model_name}) ของผู้ใช้งาน (${user.firstname} ${user.lastname}) ${newData.token_count.toLocaleString()}`
+
+          await auditLog({
+            ctx,
+            log_type: 'PERSONAL',
+            old_data: old_message,
+            new_data: new_message,
+            old_status: null,
+            new_status: null,
+          });
+
+          // ... ภายในฟังก์ชัน
+          await notifyUser({
+            userId: id,
+            title: 'เเจ้งเตือนตั้งค่า Model ของผู้ใช้งาน',
+            message: `จำนวน Token ของ Model (${oldData.ai.model_name}) จาก ${oldData.token_count.toLocaleString()} เป็น ${newData.token_count.toLocaleString()}`,
+            type: 'INFO',
+
+            // ส่งเข้ามาจาก scope ปัจจุบัน
+            to: user.email,
+
+            // ถ้ามี transaction:
+            // transaction: t,
+          });
         }
       }
     }

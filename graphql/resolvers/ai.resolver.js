@@ -20,7 +20,7 @@ module.exports = {
     },
     updateAi: async (_parent, { id, input }, ctx) => {
       requireAuth(ctx); // ต้องล็อกอินก่อน
-      return await AiController.updateAi(id, input);
+      return await AiController.updateAi(id, input, ctx);
     },
     deleteAi: async (_parent, { id }, ctx) => {
       requireAuth(ctx); // ต้องล็อกอินก่อน

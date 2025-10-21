@@ -20,7 +20,7 @@ module.exports = {
     },
     updateSetting: async (_parent, { id, input }, ctx) => {
       requireAuth(ctx); // ต้องล็อกอินก่อน
-      return await SettingController.updateSetting(id, input);
+      return await SettingController.updateSetting(id, input, ctx);
     },
     deleteSetting: async (_parent, { id }, ctx) => {
       requireAuth(ctx); // ต้องล็อกอินก่อน
