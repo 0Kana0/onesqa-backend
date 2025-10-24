@@ -58,6 +58,13 @@ module.exports = (sequelize, DataTypes) => {
       allowNull: false,
       defaultValue: 'LIGHT',
     },
+    locale: {
+      type: DataTypes.ENUM('th', 'en'),
+      allowNull: false,
+      defaultValue: 'th',
+    },
+    alert: DataTypes.BOOLEAN,
+    is_online: DataTypes.BOOLEAN,
     loginAt: DataTypes.DATE,
   }, {
     sequelize,

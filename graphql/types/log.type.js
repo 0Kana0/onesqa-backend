@@ -20,6 +20,18 @@ module.exports = `
     createdAt: DateTime!
     updatedAt: DateTime!
   }
+  input LogFilterInput {
+    logType: LogType
+    startDate: DateTime  # รวมเวลาได้ เช่น 2025-10-01T00:00:00
+    endDate: DateTime    # แนะนำส่งสิ้นวัน (23:59:59.999) เพื่อให้ inclusive
+  }
+  # เดิม: type Log {...} ใช้เหมือนเดิม
+  type LogPage {
+    items: [Log!]!
+    page: Int!
+    pageSize: Int!
+    totalCount: Int!
+  }
 
   input LogInput {
     edit_name: String!
@@ -31,7 +43,8 @@ module.exports = `
   }
 
   extend type Query {
-    logs: [Log!]!
+    # ใช้งานจริงแนะนำตัวนี้
+    logs(page: Int = 1, pageSize: Int = 20, where: LogFilterInput): LogPage!
     log(id: ID!): Log
   }
 

@@ -9,6 +9,10 @@ module.exports = `
     LIGHT
     DARK
   }
+  enum localeMode {
+    th
+    en
+  }
 
   type RoleName {
     role_name: String!
@@ -48,6 +52,9 @@ module.exports = `
     phone: String!
     email: String!
     login_type: LoginType!
+    locale: localeMode!
+    alert: Boolean!
+    is_online: Boolean!
     position: String!
     group_name: String!
     ai_access: Boolean!
@@ -80,6 +87,9 @@ module.exports = `
     group_name: String
     ai_access: Boolean
     color_mode: ColorMode
+    locale: localeMode
+    alert: Boolean
+    is_online: Boolean
     
     # 👇 ตารางลูก (relations)
     user_role: [UserRoleInput!]

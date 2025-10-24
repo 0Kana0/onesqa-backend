@@ -12,6 +12,9 @@ module.exports = {
         IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'enum_users_color_mode') THEN
           CREATE TYPE "enum_users_color_mode" AS ENUM ('LIGHT', 'DARK');
         END IF;
+        IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'enum_users_locate_mode') THEN
+          CREATE TYPE "enum_users_locate_mode" AS ENUM ('th', 'en');
+        END IF;
       END$$;
     `);
 
@@ -35,6 +38,14 @@ module.exports = {
         allowNull: false,
         defaultValue: 'NORMAL',
       },
+      locale: {
+        // อ้าง enum ที่สร้างไว้ด้วยชื่อ type โดยตรง
+        type: 'enum_users_locate_mode',
+        allowNull: false,
+        defaultValue: 'th',
+      },
+      alert: { type: Sequelize.BOOLEAN, defaultValue: false },
+      is_online: { type: Sequelize.BOOLEAN, defaultValue: false },
       position: { type: Sequelize.STRING },
       group_name: { type: Sequelize.STRING },
       ai_access: { type: Sequelize.BOOLEAN, defaultValue: false },
@@ -74,6 +85,9 @@ module.exports = {
         END IF;
         IF EXISTS (SELECT 1 FROM pg_type WHERE typname = 'enum_users_color_mode') THEN
           DROP TYPE "enum_users_color_mode";
+        END IF;
+        IF EXISTS (SELECT 1 FROM pg_type WHERE typname = 'enum_users_locate_mode') THEN
+          DROP TYPE "enum_users_locate_mode";
         END IF;
       END$$;
     `);

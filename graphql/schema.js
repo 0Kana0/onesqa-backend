@@ -28,6 +28,9 @@ const settingResolver = require("./resolvers/setting.resolver");
 const notificationType = require("./types/notification.type");
 const notificationResolver = require("./resolvers/notification.resolver");
 
+const userStatusType = require("./types/userStatus.type");
+const userStatusResolver = require("./resolvers/userStatus.resolver");
+
 const typeDefs = [
   baseType, 
   aiType, 
@@ -36,7 +39,8 @@ const typeDefs = [
   userType,
   logType,
   settingType,
-  notificationType
+  notificationType,
+  userStatusType
 ];
 const resolvers = [
   aiResolver, 
@@ -45,7 +49,8 @@ const resolvers = [
   userResolver,
   logResolver,
   settingResolver,
-  notificationResolver
+  notificationResolver,
+  userStatusResolver
 ];
 
 const schema = makeExecutableSchema({ typeDefs, resolvers });
