@@ -67,6 +67,18 @@ module.exports = `
     user_role: [UserRole!]!
     user_ai: [UserAi!]!
   }
+  input UserFilterInput {
+    role: String     # ตรงกับ Role.role_name (เช่น "ADMIN", "STAFF")
+    status: String   # "ONLINE" | "OFFLINE" หรือ "true"/"false" ก็ได้
+    search: String   # 👈 เพิ่มช่องค้นหา
+  }
+  # เดิม: type Log {...} ใช้เหมือนเดิม
+  type UserPage {
+    items: [User!]!
+    page: Int!
+    pageSize: Int!
+    totalCount: Int!
+  }
 
 
   input UserRoleInput {
@@ -97,7 +109,7 @@ module.exports = `
   }
 
   extend type Query {
-    users: [User!]!
+    users(page: Int = 1, pageSize: Int = 5, where: UserFilterInput): UserPage!
     user(id: ID!): User
   }
 

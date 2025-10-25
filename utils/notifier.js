@@ -82,9 +82,8 @@ async function notifyUser(opts = {}) {
         subject: title,
         text: message,
       });
-    } catch (e) {
-      if (!silentEmailError) throw e;
-      console.error("[notifyUser] email send failed:", e?.message || e);
+    } catch (error) {
+      console.log(error);
     }
   }
 }

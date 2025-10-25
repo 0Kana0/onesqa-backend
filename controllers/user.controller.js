@@ -1,43 +1,102 @@
 // controllers/user.controller.js
-const { Op } = require("sequelize");
+const { Op, fn, col, where: whereFn } = require("sequelize");
 const db = require("../db/models"); // หรือ '../../db/models' ถ้าโปรเจกต์คุณใช้ path นั้น
 const { User, User_role, User_ai, Role, Ai } = db;
-const { auditLog } = require('../utils/auditLog'); // ปรับ path ให้ตรง
-const { notifyUser } = require('../utils/notifier') // ที่ไฟล์ service/controller ของคุณ
+const { auditLog } = require("../utils/auditLog"); // ปรับ path ให้ตรง
+const { notifyUser } = require("../utils/notifier"); // ที่ไฟล์ service/controller ของคุณ
 
-exports.listUsers = async () => {
-  return await User.findAll({
-    order: [["id", "ASC"]],
-    attributes: { exclude: ["password"] }, // กันเผลอส่ง password ออกไป
-    include: [
-      {
+exports.listUsers = async ({ page = 1, pageSize = 5, where = {} }) => {
+  // ป้องกันค่าผิดปกติ
+  const limit = Math.min(Math.max(Number(pageSize) || 5, 1), 100);
+  const p = Math.max(Number(page) || 1, 1);
+  const offset = (p - 1) * limit;
+
+  const { role, status, search  } = where || {};
+
+  // ---------- main where ของตาราง User ----------
+  const userWhere = {};
+  if (typeof status === "string" && status.trim() !== "") {
+    const s = status.trim().toLowerCase();
+    if (["ใช้งานอยู่", "true", "1"].includes(s)) userWhere.is_online = true;
+    else if (["ไม่ใช้งาน", "false", "0"].includes(s))
+      userWhere.is_online = false;
+  }
+
+  //console.log(role);
+  // 🔎 ค้นหาเฉพาะ "ชื่อ + เว้นวรรค + นามสกุล"
+  const full = (search || '').replace(/\s+/g, ' ').trim(); // "${firstname} ${lastname}"
+  if (full) {
+    userWhere[Op.and] = [
+      whereFn(
+        fn('concat_ws', ' ', col('firstname'), col('lastname')),
+        { [Op.iLike]: `%${full}%` }
+      ),
+    ];
+  }
+
+  // ---------- includes ----------
+  // include ฝั่ง role (ถ้ามีตัวกรอง role ให้ required=true เพื่อกรองด้วย join)
+  // ถ้ามี role filter => ใช้ INNER JOIN (required: true) ตลอดเส้นทาง
+  const includeUserRole = role
+    ? {
         model: User_role,
         as: "user_role",
-        required: false,
+        required: false, // บังคับให้ต้องมีแถว user_role
         include: [
           {
             model: Role,
-            as: "role", // ต้องตรงกับ alias ใน User_role.belongsTo(...)
-            attributes: ["role_name"], // << ดึงชื่อ role ตรงนี้
-            required: false,
+            as: "role",
+            attributes: ["role_name"],
+            required: true, // บังคับว่าต้องแมตช์ role ด้วย
+            where: { role_name: role }, // กรองตามชื่อ role
           },
         ],
-      },
-      {
-        model: User_ai,
-        as: "user_ai",
-        required: false,
+      }
+    : {
+        model: User_role,
+        as: "user_role",
+        required: false, // ไม่กรองระดับ user เมื่อไม่มี role filter
         include: [
           {
-            model: Ai,
-            as: "ai", // ต้องตรงกับ alias ใน User_role.belongsTo(...)
-            attributes: ["model_name"], // << ดึงชื่อ role ตรงนี้
-            required: false,
+            model: Role,
+            as: "role",
+            attributes: ["role_name"],
+            required: true, // ทำเป็น INNER JOIN เพื่อไม่ให้ได้ role = null มาใน array
           },
         ],
+      };
+
+  const includeUserAi = {
+    model: User_ai,
+    as: "user_ai",
+    required: false,
+    include: [
+      {
+        model: Ai,
+        as: "ai",
+        attributes: ["model_name"],
+        required: false,
       },
     ],
+  };
+
+  // ใช้ distinct: true เพื่อให้ count ถูกต้องเวลา join หลายแถว
+  const { rows } = await User.findAndCountAll({
+    where: userWhere,
+    attributes: { exclude: ["password"] },
+    include: [includeUserRole, includeUserAi],
+    order: [["id", "ASC"]],
+    limit,
+    offset,
+    distinct: true,
   });
+
+  return {
+    items: rows,
+    page: p,
+    pageSize: limit,
+    totalCount: rows.length,
+  };
 };
 
 exports.getByUserId = async (id) => {
@@ -124,35 +183,37 @@ exports.updateUser = async (id, input, ctx) => {
 
     console.log(user.user_ai);
     console.log("user_ai", user_ai);
-    
+
     // ส่วนของการดักไม่ให้เพิ่ม token ให้กับ user เกินกว่า token ที่เหลืออยู่
     if (Array.isArray(user_ai)) {
       for (const oldData of user.user_ai) {
         console.log(oldData.ai_id);
 
-        const newData = user_ai.find((ai) => Number(ai.ai_id) === Number(oldData.ai_id));
+        const newData = user_ai.find(
+          (ai) => Number(ai.ai_id) === Number(oldData.ai_id)
+        );
         console.log(newData);
         // ถ้ามีการเพิ่มจำนวน token
         if (newData.token_count > oldData.token_count) {
           const aiData = await Ai.findByPk(Number(oldData.ai_id));
-          console.log(aiData);  
+          console.log(aiData);
 
           // ถ้าจำนวน token ที่ต้องการเพิ่มเกินกว่าจำนวน token ที่เหลืออยู่
-          if ((newData.token_count - oldData.token_count) >= aiData.token_count) {
-            console.log("จำนวน token ที่เหลืออยู่ไม่เพียงพอ");    
-            throw new Error('จำนวน token ที่เหลืออยู่ไม่เพียงพอ');    
-          } 
+          if (newData.token_count - oldData.token_count >= aiData.token_count) {
+            console.log("จำนวน token ที่เหลืออยู่ไม่เพียงพอ");
+            throw new Error("จำนวน token ที่เหลืออยู่ไม่เพียงพอ");
+          }
         }
       }
     }
-    
+
     // ถ้ามีการเปลี่ยนแปลงสถานะ ให้ทำการเก็บ log ไว้
     if (user.ai_access !== input.ai_access && input.ai_access !== undefined) {
-      message = `กำหนด AI Access ของผู้ใช้งาน (${user.firstname} ${user.lastname})`
+      message = `กำหนด AI Access ของผู้ใช้งาน (${user.firstname} ${user.lastname})`;
 
       await auditLog({
         ctx,
-        log_type: 'PERSONAL',
+        log_type: "PERSONAL",
         old_data: message,
         new_data: message,
         old_status: user.ai_access,
@@ -161,18 +222,21 @@ exports.updateUser = async (id, input, ctx) => {
 
       const toThaiApproval = (val) => {
         // รองรับ boolean, number, และ string ('true'/'false', '1'/'0')
-        if (typeof val === 'string') return ['true', '1', 'yes', 'y'].includes(val.toLowerCase());
-        if (typeof val === 'number') return val === 1;
+        if (typeof val === "string")
+          return ["true", "1", "yes", "y"].includes(val.toLowerCase());
+        if (typeof val === "number") return val === 1;
         return !!val;
       };
-      const label = (val) => (toThaiApproval(val) ? 'อนุมัติ' : 'ไม่อนุมัติ');
+      const label = (val) => (toThaiApproval(val) ? "อนุมัติ" : "ไม่อนุมัติ");
 
       // ... ภายในฟังก์ชัน
       await notifyUser({
         userId: id,
-        title: 'เเจ้งเตือนตั้งค่า Model ของผู้ใช้งาน',
-        message: `กำหนด AI Access ของผู้ใช้งาน จาก ${label(user.ai_access)} เป็น ${label(input?.ai_access)}`,
-        type: 'INFO',
+        title: "เเจ้งเตือนตั้งค่า Model ของผู้ใช้งาน",
+        message: `กำหนด AI Access ของผู้ใช้งาน จาก ${label(
+          user.ai_access
+        )} เป็น ${label(input?.ai_access)}`,
+        type: "INFO",
 
         // ส่งเข้ามาจาก scope ปัจจุบัน
         to: user.email,
@@ -187,16 +251,26 @@ exports.updateUser = async (id, input, ctx) => {
       for (const oldData of user.user_ai) {
         console.log("oldData", oldData.ai.model_name, oldData.token_count);
 
-        const newData = user_ai.find((ai) => Number(ai.ai_id) === Number(oldData.ai_id));
+        const newData = user_ai.find(
+          (ai) => Number(ai.ai_id) === Number(oldData.ai_id)
+        );
         console.log("newData", newData, newData.token_count);
 
         if (oldData.token_count !== newData.token_count) {
-          old_message = `จำนวน Token ของ Model (${oldData.ai.model_name}) ของผู้ใช้งาน (${user.firstname} ${user.lastname}) ${oldData.token_count.toLocaleString()}`
-          new_message = `จำนวน Token ของ Model (${oldData.ai.model_name}) ของผู้ใช้งาน (${user.firstname} ${user.lastname}) ${newData.token_count.toLocaleString()}`
+          old_message = `จำนวน Token ของ Model (${
+            oldData.ai.model_name
+          }) ของผู้ใช้งาน (${user.firstname} ${
+            user.lastname
+          }) ${oldData.token_count.toLocaleString()}`;
+          new_message = `จำนวน Token ของ Model (${
+            oldData.ai.model_name
+          }) ของผู้ใช้งาน (${user.firstname} ${
+            user.lastname
+          }) ${newData.token_count.toLocaleString()}`;
 
           await auditLog({
             ctx,
-            log_type: 'PERSONAL',
+            log_type: "PERSONAL",
             old_data: old_message,
             new_data: new_message,
             old_status: null,
@@ -206,9 +280,11 @@ exports.updateUser = async (id, input, ctx) => {
           // ... ภายในฟังก์ชัน
           await notifyUser({
             userId: id,
-            title: 'เเจ้งเตือนตั้งค่า Model ของผู้ใช้งาน',
-            message: `จำนวน Token ของ Model (${oldData.ai.model_name}) จาก ${oldData.token_count.toLocaleString()} เป็น ${newData.token_count.toLocaleString()}`,
-            type: 'INFO',
+            title: "เเจ้งเตือนตั้งค่า Model ของผู้ใช้งาน",
+            message: `จำนวน Token ของ Model (${
+              oldData.ai.model_name
+            }) จาก ${oldData.token_count.toLocaleString()} เป็น ${newData.token_count.toLocaleString()}`,
+            type: "INFO",
 
             // ส่งเข้ามาจาก scope ปัจจุบัน
             to: user.email,
