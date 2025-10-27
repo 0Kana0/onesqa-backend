@@ -36,6 +36,18 @@ module.exports = (sequelize, DataTypes) => {
         onDelete: 'CASCADE',
         hooks: true, // ✅ จำเป็นถ้าใช้ paranoid
       });
+      User.hasMany(models.Chatgroup, {
+        foreignKey: 'user_id',
+        as: 'chatgroup',
+        onDelete: 'CASCADE',
+        hooks: true, // ✅ จำเป็นถ้าใช้ paranoid
+      });
+      User.hasMany(models.Chat, {
+        foreignKey: 'user_id',
+        as: 'chat',
+        onDelete: 'CASCADE',
+        hooks: true, // ✅ จำเป็นถ้าใช้ paranoid
+      });
     }
   }
   User.init({

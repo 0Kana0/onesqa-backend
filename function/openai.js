@@ -1,0 +1,26 @@
+const OpenAI = require("openai");
+require("dotenv").config();
+
+// สร้าง instance ของ OpenAI
+const openai = new OpenAI({
+  apiKey: process.env.OPENAI_API_KEY,
+});
+
+exports.openAiChat = async (historyList) => {
+  // console.log(historyList);
+  
+  try {
+    const response = await openai.chat.completions.create({
+      model: "gpt-4o", // รองรับทั้งข้อความและภาพ
+      messages: historyList
+    });
+
+    console.log(response);
+    // console.log("ผลวิเคราะห์:", response.choices[0].message.content);
+    const text = response.choices[0].message.content;
+
+    return text;
+  } catch (error) {
+    console.error(error);
+  }
+};
