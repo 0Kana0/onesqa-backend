@@ -31,6 +31,15 @@ const notificationResolver = require("./resolvers/notification.resolver");
 const userStatusType = require("./types/userStatus.type");
 const userStatusResolver = require("./resolvers/userStatus.resolver");
 
+const chatgroupType = require("./types/chatgroup.type");
+const chatgroupResolver = require("./resolvers/chatgroup.resolver");
+
+const chatType = require("./types/chat.type");
+const chatResolver = require("./resolvers/chat.resolver");
+
+const messageType = require("./types/message.type");
+const messageResolver = require("./resolvers/message.resolver");
+
 const typeDefs = [
   baseType, 
   aiType, 
@@ -40,7 +49,10 @@ const typeDefs = [
   logType,
   settingType,
   notificationType,
-  userStatusType
+  userStatusType,
+  chatgroupType,
+  chatType,
+  messageType
 ];
 const resolvers = [
   aiResolver, 
@@ -50,7 +62,10 @@ const resolvers = [
   logResolver,
   settingResolver,
   notificationResolver,
-  userStatusResolver
+  userStatusResolver,
+  chatgroupResolver,
+  chatResolver,
+  messageResolver
 ];
 
 const schema = makeExecutableSchema({ typeDefs, resolvers });

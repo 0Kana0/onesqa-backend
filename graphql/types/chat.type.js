@@ -7,13 +7,28 @@ module.exports = `
     createdAt: DateTime!
     updatedAt: DateTime!
   }
+  type ChatEdge {
+    node: Chat!
+    cursor: String!
+  }
+  type PageInfo {
+    hasNextPage: Boolean!
+    endCursor: String
+  }
+  type ChatConnection {
+    edges: [ChatEdge!]!
+    pageInfo: PageInfo!
+  }
 
   input ChatInput {
+    chatgroup_id: ID
+    user_id: ID
+    ai_id: ID
     chat_name: String
   }
 
   extend type Query {
-    chats(chatgroup_id: ID!, user_id: ID!): [Chat!]!
+    chats(first: Int = 20, after: String, chatgroup_id: ID, user_id: ID!): ChatConnection!
     chat(id: ID!): Chat
   }
 

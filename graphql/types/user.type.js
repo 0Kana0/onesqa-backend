@@ -80,7 +80,6 @@ module.exports = `
     totalCount: Int!
   }
 
-
   input UserRoleInput {
     role_id: ID!
   }

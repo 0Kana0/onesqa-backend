@@ -10,17 +10,14 @@ module.exports = `
     createdAt: DateTime!
     updatedAt: DateTime!
   }
-
   type NotificationEdge {
     node: Notification!
     cursor: String!
   }
-
   type PageInfo {
     hasNextPage: Boolean!
     endCursor: String
   }
-
   type NotificationConnection {
     edges: [NotificationEdge!]!
     pageInfo: PageInfo!
