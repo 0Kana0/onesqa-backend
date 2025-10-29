@@ -21,6 +21,9 @@ module.exports = (sequelize, DataTypes) => {
     role: DataTypes.STRING,
     text: DataTypes.TEXT,
     file: DataTypes.JSON,
+    input_token: DataTypes.INTEGER,
+    output_token: DataTypes.INTEGER,
+    total_token: DataTypes.INTEGER,
     chat_id: DataTypes.INTEGER
   }, {
     sequelize,

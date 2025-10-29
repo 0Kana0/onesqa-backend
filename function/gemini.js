@@ -29,9 +29,9 @@ exports.geminiChat = async (messageList, historyList) => {
     const response = result.response;
     const text = await response.text();
 
-    console.log(response);
+    //console.log(response);
 
-    return text;
+    return { text, response };
   } catch (error) {
     console.error(error);
   }

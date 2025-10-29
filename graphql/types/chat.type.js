@@ -4,6 +4,7 @@ module.exports = `
   type Chat {
     id: ID!
     chat_name: String!
+    ai_id: ID!
     createdAt: DateTime!
     updatedAt: DateTime!
   }

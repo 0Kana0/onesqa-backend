@@ -18,6 +18,15 @@ module.exports = {
       file: {
         type: Sequelize.JSON
       },
+      input_token: {
+        type: Sequelize.INTEGER
+      },
+      output_token: {
+        type: Sequelize.INTEGER
+      },
+      total_token: {
+        type: Sequelize.INTEGER
+      },
       chat_id: {
         type: Sequelize.INTEGER,
         allowNull: false,

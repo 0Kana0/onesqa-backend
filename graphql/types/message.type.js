@@ -10,8 +10,8 @@ module.exports = `
   }
 
   input MessageInput {
-    role: String
-    text: String
+    chat_id: ID
+    message: String
   }
 
   extend type Query {

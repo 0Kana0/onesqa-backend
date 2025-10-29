@@ -15,11 +15,11 @@ exports.openAiChat = async (historyList) => {
       messages: historyList
     });
 
-    console.log(response);
-    // console.log("ผลวิเคราะห์:", response.choices[0].message.content);
+    //console.log(response);
+    //console.log("ผลวิเคราะห์:", response.choices[0].message.content);
     const text = response.choices[0].message.content;
 
-    return text;
+    return { text, response };
   } catch (error) {
     console.error(error);
   }
