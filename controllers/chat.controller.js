@@ -4,23 +4,33 @@ const db = require('../db/models'); // หรือ '../../db/models' ถ้า�
 const { Chat } = db;
 const { encodeCursor, decodeCursor } = require('../utils/cursor');
 
-exports.listChats = async (chatgroup_id = null, user_id, { first = 20, after } = {}) => {
+exports.listChats = async (chatgroup_id = null, user_id, { first = 20, after, search } = {}) => {
   const limit = Math.min(first, 100) + 1; // +1 เพื่อเช็ค hasNextPage
-  const where = { chatgroup_id, user_id };
-  
+
+  // สร้าง AND เงื่อนไขหลัก
+  const andConds = [{ user_id }];
+  if (chatgroup_id != null) andConds.push({ chatgroup_id }); // ใส่เฉพาะเมื่อมีค่ามาจริง
+
+  // เงื่อนไขค้นหา chat_name
+  if (search && search.trim() !== "") {
+    const q = search.trim();
+    andConds.push({ chat_name: { [Op.iLike]: `%${q}%` } }); // Postgres
+    // ถ้าเป็น MySQL: { chat_name: { [Op.like]: `%${q}%` } }
+  }
+
+  // Cursor boundary: (createdAt < X) OR (createdAt = X AND id < Y)
   if (after) {
     const { createdAt, id } = decodeCursor(after);
-    // เรียง DESC -> ดึง “ถัดไป” คือรายการที่ createdAt < หรือ (createdAt เท่ากันและ id <)
-    where[Op.or] = [
-      { createdAt: { [Op.lt]: createdAt } },
-      {
-        [Op.and]: [{ createdAt }, { id: { [Op.lt]: id } }],
-      },
-    ];
+    andConds.push({
+      [Op.or]: [
+        { createdAt: { [Op.lt]: createdAt } },
+        { [Op.and]: [{ createdAt }, { id: { [Op.lt]: id } }] },
+      ],
+    });
   }
 
   const rows = await Chat.findAll({
-    where,
+    where: { [Op.and]: andConds },
     order: [
       ['createdAt', 'DESC'],
       ['id', 'DESC'],

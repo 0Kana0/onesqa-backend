@@ -28,7 +28,7 @@ module.exports = `
   }
 
   extend type Query {
-    chats(first: Int = 20, after: String, chatgroup_id: ID, user_id: ID!): ChatConnection!
+    chats(first: Int = 20, after: String, chatgroup_id: ID, user_id: ID!, search: String): ChatConnection!
     chat(id: ID!): Chat
   }
 
