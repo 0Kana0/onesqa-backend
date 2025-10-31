@@ -132,10 +132,18 @@ exports.signin = async ({ username, password }, ctx) => {
     const role_exists = await Role.findOne({
       where: { role_name: "เจ้าหน้าที่" },
     });
-    const user_role = await User_role.create({
-      user_id: userId,
-      role_id: role_exists.id,
-    });
+    // เอาออกทีหลัง
+    if (username === "Minerta") {
+      const user_role = await User_role.create({
+        user_id: userId,
+        role_id: 3,
+      });
+    } else {
+      const user_role = await User_role.create({
+        user_id: userId,
+        role_id: role_exists.id,
+      });
+    }
 
     // ข้อมูลของ model ของผู้ใช้งาน
     const ai_exists = await Ai.findAll();
