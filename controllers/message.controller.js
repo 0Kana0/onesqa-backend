@@ -29,7 +29,7 @@ exports.createMessage = async (input) => {
       },
     ],
   });
-  console.log(chatOne.ai.model_name);
+  console.log(chatOne.ai.model_type);
   // ดึงข้อมูลของ chat ทั้งหมดที่อยู่ใน chatgroup นี้
   const messageAllByChatId = await Message.findAll({
     where: { chat_id: chat_id },
@@ -38,7 +38,7 @@ exports.createMessage = async (input) => {
   console.log(messageAllByChatId);
 
   // ถ้าใช้ gemini
-  if (chatOne.ai.model_name === "gemini-2.5-pro") {
+  if (chatOne.ai.model_type === "gemini") {
     
     // สร้าง array สำหรับเก็บ prompt ที่ผ่านมาโดยมี prompt ตั้งต้น
     const historyList = [
@@ -74,7 +74,7 @@ exports.createMessage = async (input) => {
     //console.log(messageList);
 
     // ส่งประวัติ prompt และคำถามล่าสุดไปในคำนวนและ return คำตอบออกมา
-    const { text, response } = await geminiChat(messageList, historyList);
+    const { text, response } = await geminiChat(messageList, historyList, chatOne.ai.model_name);
     console.log("text", text);
     console.log("response", response);
 
@@ -113,7 +113,7 @@ exports.createMessage = async (input) => {
     };
 
     // ถ้าใช้ openai
-  } else if (chatOne.ai.model_name === "gpt-4o") {
+  } else if (chatOne.ai.model_type === "gpt") {
 
     // สร้าง array สำหรับเก็บ prompt ที่ผ่านมาโดยมี prompt ตั้งต้น
     const historyList = [
@@ -152,7 +152,7 @@ exports.createMessage = async (input) => {
     //console.log(historyList);
 
     // ส่งประวัติ prompt และคำถามล่าสุดไปในคำนวนและ return คำตอบออกมา
-    const { text, response } = await openAiChat(historyList);
+    const { text, response } = await openAiChat(historyList, chatOne.ai.model_name);
     console.log("text", text);
     console.log("response", response);
 

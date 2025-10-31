@@ -4,6 +4,8 @@ module.exports = `
   type Ai {
     id: ID!
     model_name: String!
+    model_use_name: String!
+    model_type: String!
     token_count: Int!
     token_all: Int
     activity: Boolean!
@@ -15,6 +17,8 @@ module.exports = `
 
   input AiInput {
     model_name: String
+    model_use_name: String!
+    model_type: String!
     token_count: Int!
     token_all: Int
     activity: Boolean!

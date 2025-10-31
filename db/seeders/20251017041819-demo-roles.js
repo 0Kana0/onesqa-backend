@@ -4,9 +4,21 @@ module.exports = {
   async up (queryInterface, Sequelize) {
     const now = new Date();
     const candidates = [
-      { role_name: 'เจ้าหน้าที่', createdAt: now, updatedAt: now },
-      { role_name: 'ผู้ประเมินภายนอก', createdAt: now, updatedAt: now },
-      { role_name: 'ผู้ดูแลระบบ', createdAt: now, updatedAt: now },
+      { 
+        role_name: 'เจ้าหน้าที่', 
+        createdAt: now, 
+        updatedAt: now 
+      },
+      { 
+        role_name: 'ผู้ประเมินภายนอก', 
+        createdAt: now, 
+        updatedAt: now 
+      },
+      { 
+        role_name: 'ผู้ดูแลระบบ', 
+        createdAt: now, 
+        updatedAt: now 
+      },
     ];
 
     await queryInterface.sequelize.transaction(async (t) => {

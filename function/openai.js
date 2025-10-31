@@ -6,12 +6,12 @@ const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY,
 });
 
-exports.openAiChat = async (historyList) => {
+exports.openAiChat = async (historyList, model_name) => {
   // console.log(historyList);
   
   try {
     const response = await openai.chat.completions.create({
-      model: "gpt-4o", // รองรับทั้งข้อความและภาพ
+      model: model_name, // รองรับทั้งข้อความและภาพ
       messages: historyList
     });
 

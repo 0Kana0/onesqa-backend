@@ -6,7 +6,9 @@ module.exports = {
     const now = new Date();
     const candidates = [
       {
-        model_name: 'gpt-4o',
+        model_name: 'gpt-5',
+        model_use_name: 'ChatGPT 5',
+        model_type: 'gpt',
         token_count: 1000000000,
         token_all: 1000000000,
         activity: true,
@@ -15,6 +17,8 @@ module.exports = {
       },
       {
         model_name: 'gemini-2.5-pro',
+        model_use_name: 'Gemini 2.5 Pro',
+        model_type: 'gemini',
         token_count: 1000000000,
         token_all: 1000000000,
         activity: true,
@@ -43,7 +47,7 @@ module.exports = {
 
   async down (queryInterface, Sequelize) {
     await queryInterface.bulkDelete('ai', {
-      model_name: ['gpt-4o', 'gemini-2.5-pro']
+      model_name: ['gpt-5', 'gemini-2.5-pro']
     }, {});
   }
 };

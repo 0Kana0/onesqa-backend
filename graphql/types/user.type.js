@@ -29,6 +29,8 @@ module.exports = `
 
   type AiName {
     model_name: String!
+    model_use_name: String!
+    model_type: String!
   }
   type UserAi {
     id: ID!

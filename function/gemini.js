@@ -11,12 +11,12 @@ if (!API_KEY) {
 // สร้างอินสแตนซ์ของ Gemini
 const genAI = new GoogleGenerativeAI(API_KEY);
 
-exports.geminiChat = async (messageList, historyList) => {
+exports.geminiChat = async (messageList, historyList, model_name) => {
   // console.log("historyList", historyList);
   // console.log("messageList", messageList);
 
   const model = genAI.getGenerativeModel({
-    model: "gemini-2.5-pro", // ✅ ใช้ชื่อที่รองรับ
+    model: model_name, // ✅ ใช้ชื่อที่รองรับ
   });
 
   try {

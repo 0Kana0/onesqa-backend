@@ -21,6 +21,8 @@ module.exports = (sequelize, DataTypes) => {
   }
   Ai.init({
     model_name: DataTypes.STRING,
+    model_use_name: DataTypes.STRING,
+    model_type: DataTypes.STRING,
     token_count: DataTypes.INTEGER,
     token_all: DataTypes.INTEGER,
     activity: DataTypes.BOOLEAN

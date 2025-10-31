@@ -63,7 +63,7 @@ exports.updateAi = async (id, input, ctx) => {
 
   //ถ้ามีการเปลี่ยนเเปลงสถานะ ให้ทำการเก็บ log ไว้
   if (row.activity !== input.activity) {
-    message = `กำหนด AI Access (${row.model_name})`
+    message = `กำหนด AI Access (${row.model_use_name})`
 
     await auditLog({
       ctx,
@@ -77,8 +77,8 @@ exports.updateAi = async (id, input, ctx) => {
 
   //ถ้ามีการเปลี่ยนเเปลงจำนวน token ให้ทำการเก็บ log ไว้
   if (row.token_count !== input.token_count) {
-    old_message = `จำนวน Token ของ Model (${row.model_name}) ${row.token_count.toLocaleString()}`
-    new_message = `จำนวน Token ของ Model (${row.model_name}) ${input.token_count.toLocaleString()}`
+    old_message = `จำนวน Token ของ Model (${row.model_use_name}) ${row.token_count.toLocaleString()}`
+    new_message = `จำนวน Token ของ Model (${row.model_use_name}) ${input.token_count.toLocaleString()}`
 
     await auditLog({
       ctx,

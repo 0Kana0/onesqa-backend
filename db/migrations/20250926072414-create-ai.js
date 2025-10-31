@@ -12,6 +12,12 @@ module.exports = {
       model_name: {
         type: Sequelize.STRING
       },
+      model_use_name: {
+        type: Sequelize.STRING
+      },
+      model_type: {
+        type: Sequelize.STRING
+      },
       token_count: {
         type: Sequelize.INTEGER
       },

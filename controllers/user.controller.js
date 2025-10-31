@@ -74,7 +74,7 @@ exports.listUsers = async ({ page = 1, pageSize = 5, where = {} }) => {
       {
         model: Ai,
         as: "ai",
-        attributes: ["model_name"],
+        attributes: ["model_name", "model_use_name", "model_type"],
         required: false,
       },
     ],
@@ -125,7 +125,7 @@ exports.getByUserId = async (id) => {
           {
             model: Ai,
             as: "ai", // ต้องตรงกับ alias ใน User_role.belongsTo(...)
-            attributes: ["model_name"], // << ดึงชื่อ role ตรงนี้
+            attributes: ["model_name", "model_use_name", "model_type"], // << ดึงชื่อ role ตรงนี้
             required: false,
           },
         ],
@@ -164,7 +164,7 @@ exports.updateUser = async (id, input, ctx) => {
             {
               model: Ai,
               as: "ai", // ต้องตรงกับ alias ใน User_role.belongsTo(...)
-              attributes: ["model_name"], // << ดึงชื่อ role ตรงนี้
+              attributes: ["model_name", "model_use_name", "model_type"], // << ดึงชื่อ role ตรงนี้
               required: false,
             },
           ],
@@ -233,9 +233,7 @@ exports.updateUser = async (id, input, ctx) => {
       await notifyUser({
         userId: id,
         title: "เเจ้งเตือนตั้งค่า Model ของผู้ใช้งาน",
-        message: `กำหนด AI Access ของผู้ใช้งาน จาก ${label(
-          user.ai_access
-        )} เป็น ${label(input?.ai_access)}`,
+        message: `กำหนด AI Access ของผู้ใช้งาน จาก ${label(user.ai_access)} เป็น ${label(input?.ai_access)}`,
         type: "INFO",
 
         // ส่งเข้ามาจาก scope ปัจจุบัน
@@ -249,7 +247,7 @@ exports.updateUser = async (id, input, ctx) => {
     //ถ้ามีการเปลี่ยนเเปลงจำนวน token ให้ทำการเก็บ log ไว้
     if (Array.isArray(user_ai)) {
       for (const oldData of user.user_ai) {
-        console.log("oldData", oldData.ai.model_name, oldData.token_count);
+        console.log("oldData", oldData.ai.model_use_name, oldData.token_count);
 
         const newData = user_ai.find(
           (ai) => Number(ai.ai_id) === Number(oldData.ai_id)
@@ -257,16 +255,8 @@ exports.updateUser = async (id, input, ctx) => {
         console.log("newData", newData, newData.token_count);
 
         if (oldData.token_count !== newData.token_count) {
-          old_message = `จำนวน Token ของ Model (${
-            oldData.ai.model_name
-          }) ของผู้ใช้งาน (${user.firstname} ${
-            user.lastname
-          }) ${oldData.token_count.toLocaleString()}`;
-          new_message = `จำนวน Token ของ Model (${
-            oldData.ai.model_name
-          }) ของผู้ใช้งาน (${user.firstname} ${
-            user.lastname
-          }) ${newData.token_count.toLocaleString()}`;
+          old_message = `จำนวน Token ของ Model (${oldData.ai.model_use_name}) ของผู้ใช้งาน (${user.firstname} ${user.lastname}) ${oldData.token_count.toLocaleString()}`;
+          new_message = `จำนวน Token ของ Model (${oldData.ai.model_use_name}) ของผู้ใช้งาน (${user.firstname} ${user.lastname}) ${newData.token_count.toLocaleString()}`;
 
           await auditLog({
             ctx,
@@ -281,9 +271,7 @@ exports.updateUser = async (id, input, ctx) => {
           await notifyUser({
             userId: id,
             title: "เเจ้งเตือนตั้งค่า Model ของผู้ใช้งาน",
-            message: `จำนวน Token ของ Model (${
-              oldData.ai.model_name
-            }) จาก ${oldData.token_count.toLocaleString()} เป็น ${newData.token_count.toLocaleString()}`,
+            message: `จำนวน Token ของ Model (${oldData.ai.model_use_name}) จาก ${oldData.token_count.toLocaleString()} เป็น ${newData.token_count.toLocaleString()}`,
             type: "INFO",
 
             // ส่งเข้ามาจาก scope ปัจจุบัน
@@ -339,7 +327,7 @@ exports.updateUser = async (id, input, ctx) => {
         {
           model: User_ai,
           as: "user_ai",
-          include: [{ model: Ai, as: "ai", attributes: ["model_name"] }],
+          include: [{ model: Ai, as: "ai", attributes: ["model_name", "model_use_name", "model_type"] }],
         },
       ],
       transaction: t,
