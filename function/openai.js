@@ -1,26 +1,17 @@
 const OpenAI = require("openai");
 require("dotenv").config();
 
-// สร้าง instance ของ OpenAI
-const openai = new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY,
-});
+const client = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
 exports.openAiChat = async (historyList, model_name) => {
-  // console.log(historyList);
-  
-  try {
-    const response = await openai.chat.completions.create({
-      model: model_name, // รองรับทั้งข้อความและภาพ
-      messages: historyList
-    });
+  // historyList: [{ role: "system"|"user"|"assistant", content: "..." }, ...]
+  const resp = await client.responses.create({
+    model: model_name,
+    input: historyList,                 // ใช้ array เดิมต่อได้
+    tools: [{ type: "web_search" }],    // ให้สิทธิ์ค้นเว็บ
+    tool_choice: "auto"                 // ปล่อยให้โมเดลตัดสินใจเรียกค้นเมื่อจำเป็น
+  });
 
-    //console.log(response);
-    //console.log("ผลวิเคราะห์:", response.choices[0].message.content);
-    const text = response.choices[0].message.content;
-
-    return { text, response };
-  } catch (error) {
-    console.error(error);
-  }
+  const text = resp.output_text;        // helper ใน Responses API
+  return { text, response: resp };
 };

@@ -119,17 +119,20 @@ exports.createMessage = async (input) => {
     const historyList = [
       {
         role: "system",
-        content: [{ type: "text", text: "You are a helpful assistant." }],
+        content: [{ type: "input_text", text: "You are a helpful assistant." }],
       },
     ];
     // เก็บ prompt ที่ผ่านมาทั้งหมดใน array
     for (const message of messageAllByChatId) {
       //const fileParts = await processFiles(chat.file);
-
+      const isAssistant = message.role === "assistant";
       const history = {
         role: message.role,
         content: [
-          { type: "text", text: message.text },
+          {
+            type: isAssistant ? "output_text" : "input_text",
+            text: message.text,
+          },
           // สำหรับส่งไฟล์ไปที่ model
           //...fileParts
         ],
@@ -142,7 +145,7 @@ exports.createMessage = async (input) => {
     const messagePrompt = {
       role: "user",
       content: [
-        { type: "text", text: message },
+        { type: "input_text", text: message },
         // สำหรับส่งไฟล์ไปที่ model
         //...filteredFiles
       ],
@@ -177,8 +180,8 @@ exports.createMessage = async (input) => {
         role: "assistant",
         text: text,
         file: [],
-        input_token: response.usage.prompt_tokens,
-        output_token: response.usage.completion_tokens,
+        input_token: response.usage.input_tokens,
+        output_token: response.usage.output_tokens,
         total_token: response.usage.total_tokens,
         chat_id: chat_id,
       });
