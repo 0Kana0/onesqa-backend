@@ -1,11 +1,12 @@
 // controllers/user.controller.js
 const { Op, fn, col, where: whereFn } = require("sequelize");
 const db = require("../db/models"); // หรือ '../../db/models' ถ้าโปรเจกต์คุณใช้ path นั้น
-const { User, User_role, User_ai, Role, Ai } = db;
+const { User, User_role, User_ai, Role, Ai, Chat, Message } = db;
 const { auditLog } = require("../utils/auditLog"); // ปรับ path ให้ตรง
 const { notifyUser } = require("../utils/notifier"); // ที่ไฟล์ service/controller ของคุณ
+const moment = require('moment-timezone');
 
-exports.listUsers = async ({ page = 1, pageSize = 5, where = {} }) => {
+exports.listUsers = async ({ page, pageSize, where = {} }) => {
   // ป้องกันค่าผิดปกติ
   const limit = Math.min(Math.max(Number(pageSize) || 5, 1), 100);
   const p = Math.max(Number(page) || 1, 1);
@@ -99,33 +100,41 @@ exports.listUsers = async ({ page = 1, pageSize = 5, where = {} }) => {
   };
 };
 
-exports.getByUserId = async (id) => {
-  const today = 50000;
-  const average = 40000;
+const TZ = 'Asia/Bangkok';
 
+exports.getByUserId = async (id) => {
+  // ---- คำนวณช่วงเวลา (โซนไทย) ----
+  const startOfToday     = moment.tz(TZ).startOf('day').toDate();
+  const startOfTomorrow  = moment.tz(TZ).add(1, 'day').startOf('day').toDate();
+  const startOfMonth     = moment.tz(TZ).startOf('month').toDate();
+  const startOfNextMonth = moment.tz(TZ).add(1, 'month').startOf('month').toDate();
+  const daysElapsed      = moment.tz(TZ).diff(moment(startOfMonth), 'days') + 1;
+
+  // ---- ดึงข้อมูลผู้ใช้ + สิทธิ์ AI (เหมือนเดิม) ----
   const user = await User.findByPk(id, {
-    attributes: { exclude: ["password"] },
+    attributes: { exclude: ['password'] },
     include: [
       {
         model: User_role,
-        as: "user_role",
+        as: 'user_role',
         include: [
           {
             model: Role,
-            as: "role", // ต้องตรงกับ alias ใน User_role.belongsTo(...)
-            attributes: ["role_name"], // << ดึงชื่อ role ตรงนี้
+            as: 'role',
+            attributes: ['role_name'],
             required: false,
           },
         ],
       },
       {
         model: User_ai,
-        as: "user_ai",
+        as: 'user_ai',
+        // ไม่กำหนด attributes เพื่อให้มี ai_id ติดมาด้วย
         include: [
           {
             model: Ai,
-            as: "ai", // ต้องตรงกับ alias ใน User_role.belongsTo(...)
-            attributes: ["model_name", "model_use_name", "model_type"], // << ดึงชื่อ role ตรงนี้
+            as: 'ai',
+            attributes: ['model_name', 'model_use_name', 'model_type'],
             required: false,
           },
         ],
@@ -134,18 +143,80 @@ exports.getByUserId = async (id) => {
   });
 
   if (!user) return null;
-
-  // แปลง Sequelize instance → plain object
   const userData = user.toJSON();
 
-  // ✅ เพิ่ม today, average ลงในแต่ละ user_ai
-  const userAiWithStats = (userData.user_ai || []).map((ua) => ({
-    ...ua,
-    today,
-    average,
-  }));
+  // ai_ids ที่ผู้ใช้นี้มีสิทธิ์ (ใช้จำกัดการคิวรีรวม เพื่อประหยัด)
+  const aiIds = (userData.user_ai || [])
+    .map((ua) => ua.ai_id)
+    .filter((v) => v != null);
 
-  // ✅ แทนค่าใหม่ใน userData
+  // ---- รวมโทเคน "วันนี้" ต่อ ai_id ของผู้ใช้นี้ ----
+  const todayAgg = await Chat.findAll({
+    attributes: [
+      'ai_id',
+      [fn('COALESCE', fn('SUM', col('message.total_token')), 0), 'tokens_today'],
+    ],
+    where: {
+      user_id: id,
+      ...(aiIds.length ? { ai_id: { [Op.in]: aiIds } } : {}),
+    },
+    include: [
+      {
+        model: Message,
+        as: 'message',
+        attributes: [],
+        required: false, // LEFT JOIN
+        where: { createdAt: { [Op.gte]: startOfToday, [Op.lt]: startOfTomorrow } },
+      },
+    ],
+    group: ['ai_id'],
+    raw: true,
+  });
+
+  // ---- รวมโทเคน "เดือนนี้" ต่อ ai_id ของผู้ใช้นี้ (ไว้คำนวณ average) ----
+  const monthAgg = await Chat.findAll({
+    attributes: [
+      'ai_id',
+      [fn('COALESCE', fn('SUM', col('message.total_token')), 0), 'tokens_month'],
+    ],
+    where: {
+      user_id: id,
+      ...(aiIds.length ? { ai_id: { [Op.in]: aiIds } } : {}),
+    },
+    include: [
+      {
+        model: Message,
+        as: 'message',
+        attributes: [],
+        required: false, // LEFT JOIN
+        where: { createdAt: { [Op.gte]: startOfMonth, [Op.lt]: startOfNextMonth } },
+      },
+    ],
+    group: ['ai_id'],
+    raw: true,
+  });
+
+  // ---- ทำเป็นแผนที่ดูง่าย ----
+  const todayMap = new Map(
+    todayAgg.map((r) => [String(r.ai_id), Number(r.tokens_today) || 0])
+  );
+  const monthMap = new Map(
+    monthAgg.map((r) => [String(r.ai_id), Number(r.tokens_month) || 0])
+  );
+
+  // ---- ใส่ today และ average ลงในแต่ละ user_ai ----
+  const userAiWithStats = (userData.user_ai || []).map((ua) => {
+    const key = String(ua.ai_id);
+    const tokensToday = todayMap.get(key) ?? 0;
+    const tokensMonth = monthMap.get(key) ?? 0;
+    const average = Math.round(tokensMonth / daysElapsed); // ปัดเป็นจำนวนเต็ม
+    return {
+      ...ua,
+      today: tokensToday,
+      average,
+    };
+  });
+
   return {
     ...userData,
     user_ai: userAiWithStats,

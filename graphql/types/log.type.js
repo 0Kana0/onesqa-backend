@@ -44,7 +44,7 @@ module.exports = `
 
   extend type Query {
     # ใช้งานจริงแนะนำตัวนี้
-    logs(page: Int = 1, pageSize: Int = 20, where: LogFilterInput): LogPage!
+    logs(page: Int, pageSize: Int, where: LogFilterInput): LogPage!
     log(id: ID!): Log
   }
 

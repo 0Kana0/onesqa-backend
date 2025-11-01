@@ -2,7 +2,7 @@ const { Op } = require('sequelize');
 const db = require('../db/models'); // หรือ '../../db/models' ถ้าโปรเจกต์คุณใช้ path นั้น
 const { Log } = db;
 
-exports.listLogs = async ({ page = 1, pageSize = 5, where = {} }) => {
+exports.listLogs = async ({ page, pageSize, where = {} }) => {
   const limit = Math.min(Math.max(Number(pageSize) || 5, 1), 100);
   const p = Math.max(Number(page) || 1, 1);
   const offset = (p - 1) * limit;

@@ -1,29 +1,92 @@
 // controllers/ai.controller.js
-const { Op } = require('sequelize');
+const { Op, fn, col } = require('sequelize');
 const db = require('../db/models'); // หรือ '../../db/models' ถ้าโปรเจกต์คุณใช้ path นั้น
-const { Ai } = db;
+const { Ai, Chat, Message } = db;
 const { auditLog } = require('../utils/auditLog'); // ปรับ path ให้ตรง
+const moment = require('moment-timezone');
 
 /**
  * แยก DB logic สำหรับ Ai ออกมา
  * - สามารถเขียน validation เพิ่มเติม/ธุรกิจลอจิกตรงนี้
  * - ทดสอบแยกหน่วย (unit test) ได้ง่าย
  */
+const TZ = 'Asia/Bangkok';
 
 exports.listAis = async () => {
-  const today = 50000;
-  const average = 40000;
+  // ขอบเขตเวลาโซนไทย
+  const startOfToday     = moment.tz(TZ).startOf('day').toDate();
+  const startOfTomorrow  = moment.tz(TZ).add(1, 'day').startOf('day').toDate();
+  const startOfMonth     = moment.tz(TZ).startOf('month').toDate();
+  const startOfNextMonth = moment.tz(TZ).add(1, 'month').startOf('month').toDate();
+  const daysElapsed      = moment.tz(TZ).diff(moment(startOfMonth), 'days') + 1;
 
-  const items = await Ai.findAll({
+  // 1) รายการ Ai ตามเดิม
+  const ais = await Ai.findAll({
     order: [['id', 'ASC']],
-    raw: true, // ✅ คืนค่ามาเป็น plain object ทันที
+    raw: true,
   });
 
-  return items.map((item) => ({
-    ...item,
-    today,
-    average,
-  }));
+  // 2) รวม token "วันนี้" ต่อ Ai (LEFT JOIN ผ่าน include + required:false)
+  const todayAgg = await Ai.findAll({
+    attributes: [
+      ['id', 'ai_id'],
+      [fn('COALESCE', fn('SUM', col('chat->message.total_token')), 0), 'tokens_today'],
+    ],
+    include: [{
+      model: Chat,
+      as: 'chat',
+      attributes: [],
+      required: false,
+      include: [{
+        model: Message,
+        as: 'message',
+        attributes: [],
+        required: false,
+        where: { createdAt: { [Op.gte]: startOfToday, [Op.lt]: startOfTomorrow } },
+      }],
+    }],
+    group: [col('Ai.id')],
+    raw: true,
+  });
+
+  // 3) รวม token "เดือนนี้" ต่อ Ai (ใช้คำนวณค่าเฉลี่ยต่อวัน)
+  const monthAgg = await Ai.findAll({
+    attributes: [
+      ['id', 'ai_id'],
+      [fn('COALESCE', fn('SUM', col('chat->message.total_token')), 0), 'tokens_month'],
+    ],
+    include: [{
+      model: Chat,
+      as: 'chat',
+      attributes: [],
+      required: false,
+      include: [{
+        model: Message,
+        as: 'message',
+        attributes: [],
+        required: false,
+        where: { createdAt: { [Op.gte]: startOfMonth, [Op.lt]: startOfNextMonth } },
+      }],
+    }],
+    group: [col('Ai.id')],
+    raw: true,
+  });
+
+  // 4) ทำเป็น map เพื่อ join กลับเข้า ais
+  const todayMap = new Map(todayAgg.map(r => [String(r.ai_id), Number(r.tokens_today) || 0]));
+  const monthMap = new Map(monthAgg.map(r => [String(r.ai_id), Number(r.tokens_month) || 0]));
+
+  // 5) คืนผล พร้อมฟิลด์ today และ average (ปัดเป็นจำนวนเต็ม)
+  return ais.map((item) => {
+    const tokensToday  = todayMap.get(String(item.id))  ?? 0;
+    const tokensMonth  = monthMap.get(String(item.id))  ?? 0;
+    const averageDay   = Math.round(tokensMonth / daysElapsed);
+    return {
+      ...item,
+      today: tokensToday,
+      average: averageDay,
+    };
+  });
 };
 
 exports.getAiById = async (id) => {

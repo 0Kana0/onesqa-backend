@@ -4,7 +4,7 @@ const { requireAuth } = require('../../utils/authGuard');
 
 module.exports = {
   Query: {
-    logs: async (_parent, { page = 1, pageSize = 5, where }, ctx) => {
+    logs: async (_parent, { page, pageSize, where }, ctx) => {
       requireAuth(ctx);
       return await LogController.listLogs({ page, pageSize, where });
     },

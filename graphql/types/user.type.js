@@ -110,7 +110,7 @@ module.exports = `
   }
 
   extend type Query {
-    users(page: Int = 1, pageSize: Int = 5, where: UserFilterInput): UserPage!
+    users(page: Int, pageSize: Int, where: UserFilterInput): UserPage!
     user(id: ID!): User
   }
 
