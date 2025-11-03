@@ -1,35 +1,61 @@
 // controllers/chatgroup.controller.js
 const { Op } = require('sequelize');
 const db = require('../db/models'); // หรือ '../../db/models' ถ้าโปรเจกต์คุณใช้ path นั้น
-const { Chatgroup } = db;
+const { Chatgroup, Chat } = db;
 const { encodeCursor, decodeCursor } = require('../utils/cursor');
 
-exports.listChatgroups = async (user_id, { first = 20, after } = {}) => {
-  const limit = Math.min(first, 100) + 1; // +1 เพื่อเช็ค hasNextPage
-  const where = { user_id };
-  
+exports.listChatgroups = async (
+  user_id,
+  { first = 20, after, search } = {}
+) => {
+  const pageSize = Math.min(Number(first), 100);
+  const limit = pageSize + 1; // +1 เพื่อเช็ค hasNextPage
+
+  // --- AND เงื่อนไขหลัก ---
+  const andConds = [{ user_id }];
+
+  // --- ค้นหาชื่อกลุ่ม ---
+  if (search && search.trim() !== '') {
+    const q = search.trim();
+    andConds.push({ chatgroup_name: { [Op.iLike]: `%${q}%` } }); // MySQL: Op.like
+  }
+
+  // --- Cursor boundary (DESC) ---
   if (after) {
     const { createdAt, id } = decodeCursor(after);
-    // เรียง DESC -> ดึง “ถัดไป” คือรายการที่ createdAt < หรือ (createdAt เท่ากันและ id <)
-    where[Op.or] = [
-      { createdAt: { [Op.lt]: createdAt } },
-      {
-        [Op.and]: [{ createdAt }, { id: { [Op.lt]: id } }],
-      },
-    ];
+    andConds.push({
+      [Op.or]: [
+        { createdAt: { [Op.lt]: createdAt } },
+        { [Op.and]: [{ createdAt }, { id: { [Op.lt]: id } }] },
+      ],
+    });
   }
 
   const rows = await Chatgroup.findAll({
-    where,
+    where: { [Op.and]: andConds },
     order: [
       ['createdAt', 'DESC'],
       ['id', 'DESC'],
     ],
     limit,
+    include: [
+      {
+        model: Chat,                // ต้องมี association: Chatgroup.hasMany(Chat, { as: 'chat', foreignKey: 'chatgroup_id' })
+        as: 'chat',
+        separate: true,             // กัน limit/ordering ของ Chatgroup ไม่เพี้ยน
+        order: [
+          ['updatedAt', 'DESC'],
+          ['id', 'DESC'],
+        ],
+        // ถ้าต้องการลด payload:
+        // attributes: ['id','chatgroup_id','title','createdAt','updatedAt'],
+        // limit: 5, // อยากจำกัดจำนวนแชตต่อกลุ่ม ใส่ได้
+      },
+    ],
   });
 
-  const hasNextPage = rows.length > Math.min(first, 100);
-  const slice = hasNextPage ? rows.slice(0, Math.min(first, 100)) : rows;
+  const hasNextPage = rows.length > pageSize;
+  const slice = hasNextPage ? rows.slice(0, pageSize) : rows;
 
   const edges = slice.map((row) => ({
     node: row,
@@ -45,7 +71,8 @@ exports.listChatgroups = async (user_id, { first = 20, after } = {}) => {
       endCursor,
     },
   };
-}
+};
+
 
 exports.getChatgroupById = async (id) => {
   return await Chatgroup.findByPk(id);

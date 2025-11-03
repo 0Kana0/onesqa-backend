@@ -4,9 +4,9 @@ const { requireAuth } = require('../../utils/authGuard');
 
 module.exports = {
   Query: {
-    chats: async (_parent, { chatgroup_id, user_id, first = 20, after, search }, ctx) => {
+    chats: async (_parent, { chatgroup_id, user_id, first = 20, after, search, chatgroupMode }, ctx) => {
       //requireAuth(ctx); // ต้องล็อกอินก่อน
-      return await ChatController.listChats(chatgroup_id, user_id, { first, after, search });
+      return await ChatController.listChats(chatgroup_id, user_id, { first, after, search, chatgroupMode });
     },
     chat: async (_parent, { id }, ctx) => {
       //requireAuth(ctx); // ต้องล็อกอินก่อน
