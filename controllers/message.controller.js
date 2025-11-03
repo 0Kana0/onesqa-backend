@@ -5,6 +5,9 @@ const { geminiChat } = require("../function/gemini");
 const { openAiChat } = require("../function/openai");
 const { Message, Chat, Ai } = db;
 
+const { GoogleAIFileManager } = require("@google/generative-ai/server");
+const fileMgr = new GoogleAIFileManager(process.env.GEMINI_API_KEY);
+
 exports.listMessages = async ({ chat_id }) => {
   return await Message.findAll({
     where: { chat_id: chat_id },
@@ -19,6 +22,9 @@ exports.getMessageById = async (id) => {
 exports.createMessage = async (input) => {
   const { chat_id, message } = input;
   console.log(chat_id, message);
+
+  // นำชื่อไฟล์ที่อัพโหลดเก็บเข้าไปใน array
+  const fileMessageList = []
 
   // เรียกดูข้อมูลของ chat เพื่อดูว่าใช้ model อันไหน
   const chatOne = await Chat.findByPk(chat_id, {
@@ -39,7 +45,63 @@ exports.createMessage = async (input) => {
 
   // ถ้าใช้ gemini
   if (chatOne.ai.model_type === "gemini") {
-    
+    // function สำหรับแปลงไฟล์เป็นข้อมูลสำหรับส่งไป model
+    async function processFiles(fileArray) {
+      // fileArray เป็น array ของชื่อไฟล์ เช่น ['a.png', 'b.pdf']
+      const mapped = await Promise.all(
+        fileArray.map(async (filename) => {
+          const ext = path.extname(filename).toLowerCase();
+          // ถ้าไฟล์เป็นรูปภาพ
+          if ([".png", ".jpg", ".jpeg"].includes(ext)) {
+            // เก็บนามสกุลไฟล์
+            let tranext = ext === ".jpg" ? "jpeg" : ext.substring(1);
+            // ดึงไฟล์มาจากที่อยู่ในเครื่อง
+            const filePath = path.join(__dirname, "../uploads", filename);
+            // เเปลงเป็น base64
+            const imgBase64 = fileMgr.uploadFile(
+              filePath, 
+              { 
+                mimeType: `image/${tranext}`, 
+                displayName: filename
+              }
+            );
+
+            return {
+              fileData: { 
+                fileUri: imgBase64.file.uri, 
+                mimeType: imgBase64.file.mimeType 
+              }
+            };
+            // ถ้าไฟล์เป็น pdf
+          } else if (ext === ".pdf") {
+            // ดึงไฟล์มาจากที่อยู่ในเครื่อง
+            const filePath = path.join(__dirname, "../uploads", filename);
+            // แปลงไฟล์ pdf ให้เป็น text
+            const pdfText = fileMgr.uploadFile(
+              filePath, 
+              { 
+                mimeType: `application/pdf`, 
+                displayName: filename
+              }
+            );
+
+            return {
+              fileData: { 
+                fileUri: pdfText.file.uri, 
+                mimeType: pdfText.file.mimeType 
+              }
+            };
+          }
+
+          // ไฟล์ที่ไม่รองรับ
+          return null;
+        })
+      );
+
+      // กรอง null ออก
+      return mapped.filter((x) => x !== null && x !== undefined);
+    }
+
     // สร้าง array สำหรับเก็บ prompt ที่ผ่านมาโดยมี prompt ตั้งต้น
     const historyList = [
       { role: "user", parts: [{ text: "คุณคือผู้ช่วยส่วนตัว" }] },
@@ -65,16 +127,20 @@ exports.createMessage = async (input) => {
     //console.log(historyList);
 
     // เก็บคำถามล่าสุดที่ถามใน array
-    //const filteredFiles = await processFiles(fileMessageList);
+    const filteredFiles = await processFiles(fileMessageList);
     const messageList = [
       { text: message },
       // สำหรับส่งไฟล์ไปที่ model
-      //...filteredFiles,
+      ...filteredFiles,
     ];
     //console.log(messageList);
 
     // ส่งประวัติ prompt และคำถามล่าสุดไปในคำนวนและ return คำตอบออกมา
-    const { text, response } = await geminiChat(messageList, historyList, chatOne.ai.model_name);
+    const { text, response } = await geminiChat(
+      messageList,
+      historyList,
+      chatOne.ai.model_name
+    );
     console.log("text", text);
     console.log("response", response);
 
@@ -100,7 +166,9 @@ exports.createMessage = async (input) => {
         text: text,
         file: [],
         input_token: response.usageMetadata.promptTokenCount,
-        output_token: response.usageMetadata.candidatesTokenCount + response.usageMetadata.thoughtsTokenCount,
+        output_token:
+          response.usageMetadata.candidatesTokenCount +
+          response.usageMetadata.thoughtsTokenCount,
         total_token: response.usageMetadata.totalTokenCount,
         chat_id: chat_id,
       });
@@ -155,7 +223,10 @@ exports.createMessage = async (input) => {
     //console.log(historyList);
 
     // ส่งประวัติ prompt และคำถามล่าสุดไปในคำนวนและ return คำตอบออกมา
-    const { text, response } = await openAiChat(historyList, chatOne.ai.model_name);
+    const { text, response } = await openAiChat(
+      historyList,
+      chatOne.ai.model_name
+    );
     console.log("text", text);
     console.log("response", response);
 
