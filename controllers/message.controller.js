@@ -1,12 +1,14 @@
 // controllers/message.controller.js
+const fs = require("fs");
+const path = require("path");
+
 const { Op } = require("sequelize");
 const db = require("../db/models"); // หรือ '../../db/models' ถ้าโปรเจกต์คุณใช้ path นั้น
-const { geminiChat } = require("../function/gemini");
+const { geminiChat, uploadAndWait } = require("../function/gemini");
 const { openAiChat } = require("../function/openai");
+const { extractTextFromWord } = require("../utils/wordConvert");
+const { extractTextFromExcel } = require("../utils/excelConvert");
 const { Message, Chat, Ai } = db;
-
-const { GoogleAIFileManager } = require("@google/generative-ai/server");
-const fileMgr = new GoogleAIFileManager(process.env.GEMINI_API_KEY);
 
 exports.listMessages = async ({ chat_id }) => {
   return await Message.findAll({
@@ -24,7 +26,23 @@ exports.createMessage = async (input) => {
   console.log(chat_id, message);
 
   // นำชื่อไฟล์ที่อัพโหลดเก็บเข้าไปใน array
-  const fileMessageList = []
+  const fileMessageList = [
+    //"รายงานผลการดำเนินงานOKRประจำปี2568_หน่วยงาน_รอบ6เดือน (5).pdf",
+    //"สรุปรายงานแผนปี (25).pdf",
+    //"test1.pdf",
+    //"518289279_2480801182285527_1633658446541370672_n.png",
+    //"dc5e82c4a0f3cbb70737a6e2268157e0.jpg",
+    //"สรุปรายงานแผนปี_2568.docx",
+    //"รายงานผลการดำเนินงานประจำปี2568_โครงการชื่อโครงการ _รอบ6เดือน.docx",
+    //"test1.docx",
+    //"รายการ logs (38).xlsx",
+    //"สรุปรายงานแผนปี_2568.xlsx",
+    //"test1.xlsx",
+    //"Extreme Alarm Tone.mp3",
+    //"Sweet Dreams (feat. Miguel) - Band Remix - j-hope.mp3",
+    //"VID_20210309_222537.mp4",
+    //"earnnnnnn.x_2857374233626235226_2323484814_0_540x960_1.mp4"
+  ];
 
   // เรียกดูข้อมูลของ chat เพื่อดูว่าใช้ model อันไหน
   const chatOne = await Chat.findByPk(chat_id, {
@@ -57,41 +75,98 @@ exports.createMessage = async (input) => {
             let tranext = ext === ".jpg" ? "jpeg" : ext.substring(1);
             // ดึงไฟล์มาจากที่อยู่ในเครื่อง
             const filePath = path.join(__dirname, "../uploads", filename);
+            console.log(filePath);
+
             // เเปลงเป็น base64
-            const imgBase64 = fileMgr.uploadFile(
-              filePath, 
-              { 
-                mimeType: `image/${tranext}`, 
-                displayName: filename
-              }
-            );
+            const imgBase64 = await uploadAndWait(filePath, `image/${tranext}`, filename);
 
             return {
-              fileData: { 
-                fileUri: imgBase64.file.uri, 
-                mimeType: imgBase64.file.mimeType 
-              }
+              fileData: {
+                fileUri: imgBase64.uri,
+                mimeType: imgBase64.mimeType,
+              },
             };
             // ถ้าไฟล์เป็น pdf
           } else if (ext === ".pdf") {
             // ดึงไฟล์มาจากที่อยู่ในเครื่อง
             const filePath = path.join(__dirname, "../uploads", filename);
+            console.log(filePath);
+
             // แปลงไฟล์ pdf ให้เป็น text
-            const pdfText = fileMgr.uploadFile(
-              filePath, 
-              { 
-                mimeType: `application/pdf`, 
-                displayName: filename
-              }
-            );
+            const pdfText = await uploadAndWait(filePath, "application/pdf", filename);
+            //console.log(pdfText);
 
             return {
-              fileData: { 
-                fileUri: pdfText.file.uri, 
-                mimeType: pdfText.file.mimeType 
-              }
+              fileData: {
+                fileUri: pdfText.uri,
+                mimeType: pdfText.mimeType,
+              },
             };
-          }
+
+          // ถ้าไฟล์เป็น word
+          } else if ([".doc", ".docx"].includes(ext)) {
+            // ดึงไฟล์มาจากที่อยู่ในเครื่อง
+            const filePath = path.join(__dirname, "../uploads", filename);
+            // แปลงไฟล์ word ให้เป็น text
+            const wordText = await extractTextFromWord(filePath);
+
+            return {
+              text: wordText,
+            };
+
+          // ถ้าไฟล์เป็น excel
+          } else if ([".xlsx", ".xls"].includes(ext)) {
+            // ดึงไฟล์มาจากที่อยู่ในเครื่อง
+            const filePath = path.join(__dirname, "../uploads", filename);
+            // แปลงไฟล์ excel ให้เป็น text
+            const excelText = await extractTextFromExcel(filePath);
+
+            return {
+              text: excelText,
+            };
+          } else if ([".pptx", ".ppt"].includes(ext)) {
+            
+
+          // ถ้าไฟล์เป็น mp3
+          } else if ([".mp3"].includes(ext)) {
+
+            // เก็บนามสกุลไฟล์
+            let tranext = ext.substring(1);
+            // ดึงไฟล์มาจากที่อยู่ในเครื่อง
+            const filePath = path.join(__dirname, "../uploads", filename);
+            console.log(filePath);
+
+            // แปลงไฟล์ mp3, mp4
+            const videoText = await uploadAndWait(filePath, `audio/${tranext}`, filename);
+            //console.log(mp3Text);
+
+            return {
+              fileData: {
+                fileUri: videoText.uri,
+                mimeType: videoText.mimeType,
+              },
+            };
+
+          // ถ้าไฟล์เป็น mp4
+          } else if ([".mp4"].includes(ext)) {
+
+            // เก็บนามสกุลไฟล์
+            let tranext = ext.substring(1);
+            // ดึงไฟล์มาจากที่อยู่ในเครื่อง
+            const filePath = path.join(__dirname, "../uploads", filename);
+            console.log(filePath);
+
+            // แปลงไฟล์ mp3, mp4
+            const videoText = await uploadAndWait(filePath, `video/${tranext}`, filename);
+            //console.log(mp3Text);
+
+            return {
+              fileData: {
+                fileUri: videoText.uri,
+                mimeType: videoText.mimeType,
+              },
+            };
+          } 
 
           // ไฟล์ที่ไม่รองรับ
           return null;
@@ -110,16 +185,17 @@ exports.createMessage = async (input) => {
         parts: [{ text: "รับทราบครับ ผมจะทำหน้าที่เป็นผู้ช่วยของคุณ" }],
       },
     ];
+
     // เก็บ prompt ที่ผ่านมาทั้งหมดใน array
     for (const message of messageAllByChatId) {
-      //const fileParts = await processFiles(message.file);
+      const fileParts = await processFiles(message.file);
 
       const history = {
         role: message.role,
         parts: [
           { text: message.text },
           // สำหรับส่งไฟล์ไปที่ model
-          //...fileParts,
+          ...fileParts,
         ],
       };
       historyList.push(history);
@@ -133,7 +209,7 @@ exports.createMessage = async (input) => {
       // สำหรับส่งไฟล์ไปที่ model
       ...filteredFiles,
     ];
-    //console.log(messageList);
+    console.log(messageList);
 
     // ส่งประวัติ prompt และคำถามล่าสุดไปในคำนวนและ return คำตอบออกมา
     const { text, response } = await geminiChat(
@@ -149,7 +225,7 @@ exports.createMessage = async (input) => {
       await Message.create({
         role: "user",
         text: message,
-        //file: fileMessageList,
+        file: fileMessageList,
         input_token: 0,
         output_token: 0,
         total_token: 0,
@@ -167,8 +243,9 @@ exports.createMessage = async (input) => {
         file: [],
         input_token: response.usageMetadata.promptTokenCount,
         output_token:
-          response.usageMetadata.candidatesTokenCount +
-          response.usageMetadata.thoughtsTokenCount,
+          (response?.usageMetadata?.candidatesTokenCount ?? 0) +
+          (response?.usageMetadata?.thoughtsTokenCount ?? 0) +
+          (response?.usageMetadata?.toolUsePromptTokenCount ?? 0),
         total_token: response.usageMetadata.totalTokenCount,
         chat_id: chat_id,
       });
@@ -182,7 +259,6 @@ exports.createMessage = async (input) => {
 
     // ถ้าใช้ openai
   } else if (chatOne.ai.model_type === "gpt") {
-
     // สร้าง array สำหรับเก็บ prompt ที่ผ่านมาโดยมี prompt ตั้งต้น
     const historyList = [
       {
