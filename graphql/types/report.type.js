@@ -2,22 +2,22 @@ module.exports = `
   scalar DateTime     # 👈 เพิ่มตรงนี้ 
 
   type TopFiveReport {
-    rank: Int!,
-    color: String!,
-    name: String!,
-    chats: Int!,
-    tokens: String!
+    rank: Int,
+    color: String,
+    name: String,
+    chats: Int,
+    tokens: String
   }
 
   type ChartReport {
-    date: DateTime!,
-    model: String!,
-    total_tokens: Int!
+    date: DateTime,
+    model: String,
+    total_tokens: Int
   }
 
   type CardReport {
-    value: Int!,
-    percentChange: Int!
+    value: Int,
+    percentChange: Int
   }
 
   type Report {

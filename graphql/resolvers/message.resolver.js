@@ -20,7 +20,7 @@ module.exports = {
     },
     updateMessage: async (_parent, { id, input }, ctx) => {
       //requireAuth(ctx); // ต้องล็อกอินก่อน
-      return await MessageController.updateMessage(id, input, ctx);
+      return await MessageController.updateMessage(id, input);
     },
     deleteMessage: async (_parent, { id }, ctx) => {
       //requireAuth(ctx); // ต้องล็อกอินก่อน

@@ -30,6 +30,15 @@ module.exports = {
       stored_path: {
         type: Sequelize.STRING
       },
+      message_id: {
+        type: Sequelize.INTEGER,
+        allowNull: true,
+        references: {
+          model: 'message', // ชื่อ table ใน DB
+          key: 'id'
+        },
+        onDelete: 'CASCADE', // ✅ สำคัญ!
+      },
       createdAt: {
         allowNull: false,
         type: Sequelize.DATE

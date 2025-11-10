@@ -15,6 +15,13 @@ module.exports = (sequelize, DataTypes) => {
         foreignKey: 'chat_id', 
         as: 'chat' 
       });
+
+      Message.hasMany(models.File, {
+        foreignKey: 'message_id',
+        as: 'files',
+        onDelete: 'CASCADE',
+        hooks: true, // ✅ จำเป็นถ้าใช้ paranoid
+      });
     }
   }
   Message.init({

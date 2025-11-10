@@ -1,8 +1,9 @@
 // controllers/chat.controller.js
 const { Op } = require("sequelize");
 const db = require("../db/models"); // หรือ '../../db/models' ถ้าโปรเจกต์คุณใช้ path นั้น
-const { Chat, Ai } = db;
+const { Chat, Ai, Message, File } = db;
 const { encodeCursor, decodeCursor } = require("../utils/cursor");
+const { deleteMultipleFiles } = require("../utils/fileUtils");
 
 exports.listChats = async (
   chatgroup_id = null,
@@ -83,7 +84,16 @@ exports.listChats = async (
 };
 
 exports.getChatById = async (id) => {
-  return await Chat.findByPk(id);
+  return await Chat.findByPk(id, {
+    include: [
+      {
+        model: Ai,
+        as: "ai",
+        attributes: ["model_name", "model_use_name", "model_type"],
+        required: false,
+      },
+    ],
+  });
 };
 
 exports.createChat = async (input) => {
@@ -100,6 +110,29 @@ exports.updateChat = async (id, input) => {
 };
 
 exports.deleteChat = async (id) => {
+  const deleteMessage = await Message.findAll({
+    attributes: ["id"],
+    where: { chat_id: id },
+    order: [["id", "ASC"]],
+    include: [
+      {
+        model: File, // ต้องมี association: Chatgroup.hasMany(Chat, { as: 'chat', foreignKey: 'chatgroup_id' })
+        as: "files",
+        attributes: ["id", "file_name", "stored_path"],
+        required: true, // บังคับว่าต้องแมตช์ role ด้วย
+        separate: true, // กัน limit/ordering ของ Chatgroup ไม่เพี้ยน
+      },
+    ],
+  });
+
+  // ดึงชื่อไฟล์ทั้งหมด
+  const allFileNames = deleteMessage.flatMap((msg) =>
+    msg.files.map((f) => f.file_name)
+  );
+
+  console.log(allFileNames);
+  await deleteMultipleFiles(allFileNames);
+
   const count = await Chat.destroy({ where: { id } });
   return count > 0;
 };

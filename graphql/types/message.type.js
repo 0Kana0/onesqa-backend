@@ -1,17 +1,30 @@
 module.exports = `
   scalar DateTime     # 👈 เพิ่มตรงนี้
 
+  type Files {
+    id: ID
+    file_name: String
+    original_name: String
+    stored_path: String
+  }
   type Message {
     id: ID!
     role: String!
     text: String!
     createdAt: DateTime!
     updatedAt: DateTime!
-  }
 
+    files: [Files]
+  }
+  
+  input FileDataInput {
+    id: ID
+    filename: String
+  }
   input MessageInput {
     chat_id: ID
     message: String
+    fileMessageList: [FileDataInput]
   }
 
   extend type Query {

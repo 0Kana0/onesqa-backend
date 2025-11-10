@@ -11,6 +11,10 @@ module.exports = (sequelize, DataTypes) => {
      */
     static associate(models) {
       // define association here
+      File.belongsTo(models.Message, { 
+        foreignKey: 'message_id', 
+        as: 'message' 
+      });
     }
   }
   File.init({
@@ -20,7 +24,8 @@ module.exports = (sequelize, DataTypes) => {
     mime_type: DataTypes.STRING,
     size_bytes: DataTypes.INTEGER,
     folder: DataTypes.STRING,
-    stored_path: DataTypes.STRING
+    stored_path: DataTypes.STRING,
+    message_id: DataTypes.INTEGER
   }, {
     sequelize,
     freezeTableName: true,

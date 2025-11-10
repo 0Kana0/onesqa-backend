@@ -115,73 +115,89 @@ exports.listReports = async ({ page, pageSize, where = {} }) => {
 };
 
 exports.CardMessageReports = async () => {
-  // ขอบเขตเวลาแบบ [start, end) ปิดปลายด้วย < เพื่อกันชนเดือนถัดไปพอดี
-  const startThisMonth = moment().startOf("month").toDate();
-  const endThisMonth   = moment(startThisMonth).add(1, "month").toDate();
+  try {
+    const TZ = 'Asia/Bangkok'; // ขอบเขตเดือนอิงเวลาไทย
+    const startThisMonth = moment.tz(TZ).startOf('month').toDate();
+    const endThisMonth   = moment(startThisMonth).add(1, 'month').toDate();
 
-  const startLastMonth = moment(startThisMonth).subtract(1, "month").toDate();
-  const endLastMonth   = startThisMonth; // สิ้นสุดที่ต้นเดือนปัจจุบัน
+    const startLastMonth = moment(startThisMonth).subtract(1, 'month').toDate();
+    const endLastMonth   = startThisMonth;
 
-  const [thisMonth, lastMonth] = await Promise.all([
-    Message.count({
-      where: {
-        createdAt: { [Op.gte]: startThisMonth, [Op.lt]: endThisMonth },
-      },
-    }),
-    Message.count({
-      where: {
-        createdAt: { [Op.gte]: startLastMonth, [Op.lt]: endLastMonth },
-      },
-    }),
-  ]);
+    // .catch(() => 0) กัน error ระดับ query ให้คืน 0
+    const [thisMonthRaw, lastMonthRaw] = await Promise.all([
+      Message.count({
+        where: { createdAt: { [Op.gte]: startThisMonth, [Op.lt]: endThisMonth } },
+      }).catch(() => 0),
+      Message.count({
+        where: { createdAt: { [Op.gte]: startLastMonth, [Op.lt]: endLastMonth } },
+      }).catch(() => 0),
+    ]);
 
-  const diff = thisMonth - lastMonth;
-  const direction = diff > 0 ? "เพิ่ม" : diff < 0 ? "ลด" : "เท่าเดิม";
-  const abs = Math.abs(diff);
-  // ปัดเป็นจำนวนเต็ม (ปัดขึ้น/ลงตามหลักคณิตศาสตร์)
-  const percentChange = lastMonth === 0 ? null : Math.round((diff / lastMonth) * 100);
+    // กันค่าประหลาด (เช่น undefined/NaN) ให้เป็น 0 เสมอ
+    const thisMonth = Number.isFinite(thisMonthRaw) ? thisMonthRaw : 0;
+    const lastMonth = Number.isFinite(lastMonthRaw) ? lastMonthRaw : 0;
 
-  //console.log(thisMonth, lastMonth, direction, abs, pct);
-  
-  return {
-    value: thisMonth/2,
-    percentChange
+    const diff = thisMonth - lastMonth;
+
+    // ถ้าเดือนที่แล้วเป็น 0 → ตั้งเป็น null (เลี่ยงหารศูนย์)
+    const percentChange = lastMonth === 0 ? 0 : Math.round((diff / lastMonth) * 100);
+
+    return {
+      value: Math.floor(thisMonth / 2), // ตาม logic เดิมของคุณ
+      percentChange,
+    };
+  } catch (e) {
+    // กันทุกอย่างอีกชั้น (เช่น moment/Op/Model ยังไม่พร้อม)
+    return {
+      value: 0,
+      percentChange: 0,
+    };
   }
-}
+};
 
 exports.CardTokenReports = async () => {
-  // ช่วง [start, end) ตามเวลาไทย
-  const startThisMonth = moment().startOf("month").toDate();
-  const endThisMonth   = moment(startThisMonth).add(1, "month").toDate();
+  try {
+    const TZ = 'Asia/Bangkok';
+    const startThisMonth = moment.tz(TZ).startOf('month').toDate();
+    const endThisMonth   = moment(startThisMonth).add(1, 'month').toDate();
 
-  const startLastMonth = moment(startThisMonth).subtract(1, "month").toDate();
-  const endLastMonth   = startThisMonth;
+    const startLastMonth = moment(startThisMonth).subtract(1, 'month').toDate();
+    const endLastMonth   = startThisMonth;
 
-  // รวม total_token ของแต่ละเดือน (อาจได้ null ถ้าไม่มีแถว -> แปลงเป็น 0)
-  const [sumThisRaw, sumLastRaw] = await Promise.all([
-    Message.sum("total_token", {
-      where: { createdAt: { [Op.gte]: startThisMonth, [Op.lt]: endThisMonth } },
-    }),
-    Message.sum("total_token", {
-      where: { createdAt: { [Op.gte]: startLastMonth, [Op.lt]: endLastMonth } },
-    }),
-  ]);
+    // กันกรณี sum โยน error → ให้เป็น 0
+    const [sumThisRaw, sumLastRaw] = await Promise.all([
+      Message.sum('total_token', {
+        where: { createdAt: { [Op.gte]: startThisMonth, [Op.lt]: endThisMonth } },
+      }).catch(() => 0),
+      Message.sum('total_token', {
+        where: { createdAt: { [Op.gte]: startLastMonth, [Op.lt]: endLastMonth } },
+      }).catch(() => 0),
+    ]);
 
-  const thisMonth = Number(sumThisRaw) || 0;
-  const lastMonth = Number(sumLastRaw) || 0;
+    // แปลงค่าให้เป็น number เสมอ (รองรับ DECIMAL ที่ Sequelize อาจให้มาเป็น string)
+    const normalize = (v) => {
+      if (v == null) return 0;
+      const n = Number(v);
+      return Number.isFinite(n) ? n : 0;
+    };
 
-  const diff = thisMonth - lastMonth;
-  // ปัดเป็นจำนวนเต็ม (ปัดขึ้น/ลงตามหลักคณิตศาสตร์)
-  const percentChange = lastMonth === 0 ? null : Math.round((diff / lastMonth) * 100);
+    const thisMonth = normalize(sumThisRaw);
+    const lastMonth = normalize(sumLastRaw);
 
-  return {
-    value: thisMonth,                                   // ผลรวม token เดือนนี้
-    percentChange 
-    // (ถ้าจะใช้ต่อ)
-    // lastMonth,
-    // difference: diff,
-    // differenceAbs: Math.abs(diff),
-  };
+    const diff = thisMonth - lastMonth;
+    const percentChange = lastMonth === 0 ? 0 : Math.round((diff / lastMonth) * 100);
+
+    return {
+      value: thisMonth,   // ผลรวม token เดือนนี้
+      percentChange,
+    };
+  } catch (e) {
+    // กันทุกกรณีที่นอกเหนือจาก query (เช่น import/Op/moment มีปัญหา)
+    return {
+      value: 0,
+      percentChange: 0,
+    };
+  }
 };
 
 exports.ChartReports = async ({ startDate, endDate  }) => {
