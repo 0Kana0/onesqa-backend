@@ -280,7 +280,7 @@ exports.updateUser = async (id, input, ctx) => {
 
     // ถ้ามีการเปลี่ยนแปลงสถานะ ให้ทำการเก็บ log ไว้
     if (user.ai_access !== input.ai_access && input.ai_access !== undefined) {
-      message = `กำหนด AI Access ของผู้ใช้งาน (${user.firstname} ${user.lastname})`;
+      const message = `กำหนด AI Access ของผู้ใช้งาน (${user.firstname} ${user.lastname})`;
 
       await auditLog({
         ctx,
@@ -326,8 +326,8 @@ exports.updateUser = async (id, input, ctx) => {
         console.log("newData", newData, newData.token_count);
 
         if (oldData.token_count !== newData.token_count) {
-          old_message = `จำนวน Token ของ Model (${oldData.ai.model_use_name}) ของผู้ใช้งาน (${user.firstname} ${user.lastname}) ${oldData.token_count.toLocaleString()}`;
-          new_message = `จำนวน Token ของ Model (${oldData.ai.model_use_name}) ของผู้ใช้งาน (${user.firstname} ${user.lastname}) ${newData.token_count.toLocaleString()}`;
+          const old_message = `จำนวน Token ของ Model (${oldData.ai.model_use_name}) ของผู้ใช้งาน (${user.firstname} ${user.lastname}) ${oldData.token_count.toLocaleString()}`;
+          const new_message = `จำนวน Token ของ Model (${oldData.ai.model_use_name}) ของผู้ใช้งาน (${user.firstname} ${user.lastname}) ${newData.token_count.toLocaleString()}`;
 
           await auditLog({
             ctx,

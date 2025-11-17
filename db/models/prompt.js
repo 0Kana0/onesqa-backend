@@ -3,7 +3,7 @@ const {
   Model
 } = require('sequelize');
 module.exports = (sequelize, DataTypes) => {
-  class Log extends Model {
+  class Prompt extends Model {
     /**
      * Helper method for defining associations.
      * This method is not a part of Sequelize lifecycle.
@@ -13,23 +13,20 @@ module.exports = (sequelize, DataTypes) => {
       // define association here
     }
   }
-  Log.init({
-    edit_name: DataTypes.STRING,
-    log_type: {
-      type: DataTypes.ENUM('PROMPT', 'ALERT', 'MODEL', 'PERSONAL', 'GROUP'),
+  Prompt.init({
+    prompt_title: DataTypes.STRING,
+    prompt_detail: DataTypes.TEXT,
+    locale: {
+      type: DataTypes.ENUM('th', 'en'),
       allowNull: false,
-      //defaultValue: 'NORMAL',
+      defaultValue: 'th',
     },
-    old_data: DataTypes.TEXT,
-    new_data: DataTypes.TEXT,
-    old_status: DataTypes.BOOLEAN,
-    new_status: DataTypes.BOOLEAN
   }, {
     sequelize,
     freezeTableName: true,
     timestamps: true, // ต้องเปิด timestamps ด้วย
-    modelName: 'Log',
-    tableName: 'log'
+    modelName: 'Prompt',
+    tableName: 'prompt'
   });
-  return Log;
+  return Prompt;
 };

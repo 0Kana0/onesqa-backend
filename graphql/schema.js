@@ -46,6 +46,9 @@ const reportResolver = require("./resolvers/report.resolver");
 const fileType = require("./types/file.type");
 const fileResolver = require("./resolvers/file.resolver");
 
+const promptType = require("./types/prompt.type");
+const promptResolver = require("./resolvers/prompt.resolver");
+
 const typeDefs = [
   baseType, 
   aiType, 
@@ -60,7 +63,8 @@ const typeDefs = [
   chatType,
   messageType,
   reportType,
-  fileType
+  fileType,
+  promptType
 ];
 const resolvers = [
   aiResolver, 
@@ -75,7 +79,8 @@ const resolvers = [
   chatResolver,
   messageResolver,
   reportResolver,
-  fileResolver
+  fileResolver,
+  promptResolver
 ];
 
 const schema = makeExecutableSchema({ typeDefs, resolvers });

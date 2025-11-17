@@ -17,11 +17,11 @@ module.exports = `
 
   input AiInput {
     model_name: String
-    model_use_name: String!
-    model_type: String!
-    token_count: Int!
+    model_use_name: String
+    model_type: String
+    token_count: Int
     token_all: Int
-    activity: Boolean!
+    activity: Boolean
   }
 
   extend type Query {
