@@ -33,6 +33,9 @@ module.exports = {
       token_all: {
         type: Sequelize.INTEGER
       },
+      is_notification: {
+        type: Sequelize.BOOLEAN, defaultValue: false
+      },
       createdAt: {
         allowNull: false,
         type: Sequelize.DATE

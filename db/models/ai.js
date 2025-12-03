@@ -31,7 +31,8 @@ module.exports = (sequelize, DataTypes) => {
     model_type: DataTypes.STRING,
     token_count: DataTypes.INTEGER,
     token_all: DataTypes.INTEGER,
-    activity: DataTypes.BOOLEAN
+    activity: DataTypes.BOOLEAN,
+    is_notification: DataTypes.BOOLEAN,
   }, {
     sequelize,
     freezeTableName: true,

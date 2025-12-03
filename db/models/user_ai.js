@@ -26,6 +26,7 @@ module.exports = (sequelize, DataTypes) => {
     ai_id: DataTypes.INTEGER,
     token_count: DataTypes.INTEGER,
     token_all: DataTypes.INTEGER,
+    is_notification: DataTypes.BOOLEAN,
   }, {
     sequelize,
     freezeTableName: true,

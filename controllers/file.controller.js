@@ -3,15 +3,23 @@ const fs = require('fs');
 const { Op } = require('sequelize');
 const db = require('../db/models'); // หรือ '../../db/models' ถ้าโปรเจกต์คุณใช้ path นั้น
 const { File } = db;
+const { checkTokenQuota } = require("../utils/checkTokenQuota");
 
 const UPLOAD_DIR = path.join(__dirname, '..', 'uploads');
 if (!fs.existsSync(UPLOAD_DIR)) fs.mkdirSync(UPLOAD_DIR, { recursive: true });
 
 const sanitize = (name) => name.replace(/[^a-zA-Z0-9._-]/g, '_');
 
-exports.saveUpload = async (upload) => {
+exports.saveUpload = async (upload, ai_id, user_id) => {
   const { filename, mimetype, encoding, createReadStream } = await upload;
   const stream = createReadStream();
+
+  // ห้ามส่งคำถามถ้าเหลือ token ของ user ทั้งหมดเหลือไม่ถึง 15%
+  await checkTokenQuota({
+    aiId: ai_id,
+    userId: user_id,
+    // minPercent: 15, // ไม่ส่งก็ได้ ใช้ค่า default
+  });
 
   console.log("filename", filename);
 

@@ -12,6 +12,13 @@ const {
 const { setOtp, verifyOtp } = require("../utils/otp.js");
 const transporter = require("../config/email-config.js");
 
+const {
+  checkUserLocked,
+  resetLoginState,
+  handleFailedLogin,
+  MAX_FAILED_ATTEMPTS,
+} = require("../utils/loginLimiter.js");
+
 const db = require("../db/models");
 const { User, RefreshToken, User_role, User_ai, Role, Ai } = db;
 
@@ -62,6 +69,20 @@ exports.signin = async ({ username, password }, ctx) => {
   if (!username) throw new Error("ชื่อผู้ใช้งานห้ามเป็นค่าว่าง");
   if (!password) throw new Error("รหัสผ่านห้ามเป็นค่าว่าง");
 
+  // 🔒 0) เช็กก่อนเลยว่าบัญชีนี้ถูกล็อกอยู่หรือไม่
+  const ttl = await checkUserLocked(username);
+    if (ttl !== null) {
+    const minutes = Math.floor(ttl / 60);
+    const seconds = ttl % 60;
+
+    const mm = String(minutes).padStart(2, "0");
+    const ss = String(seconds).padStart(2, "0");
+
+    throw new Error(
+      `บัญชีนี้ถูกล็อกชั่วคราว กรุณารอสักครู่เพื่อเข้าสู่ระบบอีกครั้ง ${mm}:${ss} นาที`
+    );
+  }
+
   // เตรียมข้อมูลก่อนส่ง
   const postData = { username, password };
 
@@ -82,8 +103,13 @@ exports.signin = async ({ username, password }, ctx) => {
 
   // ถ้าชื่อผู้ใช้หรือรหัสผ่านไม่ถูกต้อง
   if (response.data.result === "fail") {
-    throw new Error(response.data.desc || "เข้าสู่ระบบไม่สำเร็จ");
+    // ❌ เคส login fail → เพิ่มตัวนับ + อาจล็อก 5 นาที
+    await handleFailedLogin(username, response.data.desc);
   }
+
+  // ✅ มาถึงตรงนี้แปลว่า login ผ่าน ONESQA แล้ว
+  //    → ล้างตัวนับผิด / lock ใน Redis
+  await resetLoginState(username);
 
   // ตรวจสอบว่าชื่อผู้ใช้คนนี้ได้ทำการ backup ไว้หรือยัง
   const exists = await User.findOne({ 
@@ -214,6 +240,8 @@ exports.signinWithIdennumber = async ({ idennumber, otp_type }, ctx) => {
   if (!idennumber) throw new Error("เลขบัตรประชาชนห้ามเป็นค่าว่าง");
   if (!otp_type) throw new Error("otp_type ห้ามเป็นค่าว่าง");
 
+  if (idennumber.length !== 13) throw new Error("เลขบัตรประชาชนต้องมี 13 หลัก");
+
   // เตรียมข้อมูลก่อนส่ง
   const postData = {
     academy_level_id: "2",
@@ -242,6 +270,8 @@ exports.signinWithIdennumber = async ({ idennumber, otp_type }, ctx) => {
 
   // ถ้ายังให้ทำการ backup ข้อมูลเก็บไว้
   let userId;
+  let userPhone;
+  let userEmail;
   if (!exists) {
     // บันทักข้อมูลผู้ใช่้งานลง db เพื่อ backup
     const user = await User.create({
@@ -261,6 +291,8 @@ exports.signinWithIdennumber = async ({ idennumber, otp_type }, ctx) => {
       loginAt: moment(),
     });
     userId = user.id;
+    userPhone = user.email
+    userEmail = user.phone
 
     // บันทึกข้อมูล role ของผู้ใช้งาน
     const role_exists = await Role.findOne({
@@ -281,6 +313,10 @@ exports.signinWithIdennumber = async ({ idennumber, otp_type }, ctx) => {
         token_all: 0,
       });
     }
+  } else {
+    userId = exists.id;
+    userPhone = exists.phone
+    userEmail = exists.email
   }
 
   // สร้าง OTP แบบสุ่มเลข 6 หลัก
@@ -295,7 +331,7 @@ exports.signinWithIdennumber = async ({ idennumber, otp_type }, ctx) => {
     // เตรียมข้อมูลก่อนส่ง
     const smsPost = {
       message: `รหัส OTP ของคุณคือ ${otp} รหัสสามารถใช้ได้ถึง ${timeIn5Min} น.`,
-      phone: "0800539193",
+      phone: userPhone,
       sender: "ONESQA",
     };
 
@@ -316,17 +352,23 @@ exports.signinWithIdennumber = async ({ idennumber, otp_type }, ctx) => {
     if (rsp.data.detail !== "OK.") {
       throw new Error("ส่ง OTP ไม่สำเร็จ");
     }
-    return { message: "OTP ถูกส่งไปที่ SMS แล้ว" };
+    return { 
+      message: "OTP ถูกส่งไปที่ SMS แล้ว", 
+      method: userPhone,
+    };
   }
 
   if (otp_type === "email") {
     await transporter.sendMail({
       from: `"Send OTP" <${process.env.EMAIL_USER}>`,
-      to: "naterzaza1@gmail.com",
+      to: userEmail,
       subject: "ONESQA",
       text: `รหัส OTP ของคุณคือ ${otp} รหัสสามารถใช้ได้ถึง ${timeIn5Min} น.`,
     });
-    return { message: "OTP ถูกส่งไปที่ Email แล้ว" };
+    return { 
+      message: "OTP ถูกส่งไปที่ Email แล้ว",
+      method: userEmail,
+    };
   }
 
   throw new Error("otp_type ไม่ถูกต้อง");
@@ -341,8 +383,34 @@ exports.signinWithIdennumber = async ({ idennumber, otp_type }, ctx) => {
 
 // ---------- 3) ยืนยัน OTP (ผู้ประเมินเข้าสู่ระบบ) ----------
 exports.verifySigninWithIdennumber = async ({ idennumber, otp }, ctx) => {
+  if (!idennumber) throw new Error("เลขบัตรประชาชนห้ามเป็นค่าว่าง");
+  if (idennumber.length !== 13) throw new Error("เลขบัตรประชาชนต้องมี 13 หลัก");
+
+  if (!otp) throw new Error("เลข OTP ห้ามเป็นค่าว่าง");
+
+  // 🔒 0) เช็กก่อนเลยว่าบัญชีนี้ถูกล็อกอยู่หรือไม่
+  const ttl = await checkUserLocked(idennumber);
+    if (ttl !== null) {
+    const minutes = Math.floor(ttl / 60);
+    const seconds = ttl % 60;
+
+    const mm = String(minutes).padStart(2, "0");
+    const ss = String(seconds).padStart(2, "0");
+
+    throw new Error(
+      `บัญชีนี้ถูกล็อกชั่วคราว กรุณารอสักครู่เพื่อเข้าสู่ระบบอีกครั้ง ${mm}:${ss} นาที`
+    );
+  }
+
   const valid = await verifyOtp(idennumber, otp);
-  if (!valid) throw new Error("OTP ผิดหรือ OTP หมดอายุ");
+  if (!valid) {
+    // ❌ เคส login fail → เพิ่มตัวนับ + อาจล็อก 5 นาที
+    await handleFailedLogin(idennumber, "OTP ผิดหรือ OTP หมดอายุ");
+  }
+
+  // ✅ มาถึงตรงนี้แปลว่า login ผ่าน ONESQA แล้ว
+  //    → ล้างตัวนับผิด / lock ใน Redis
+  await resetLoginState(idennumber);
 
   // เรียกข้อมูลผู้ใช้สำหรับส่ง api
   const existUser = await User.findOne({ 

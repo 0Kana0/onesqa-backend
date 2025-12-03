@@ -17,7 +17,7 @@ exports.createPrompt = async (input, ctx) => {
   const findTitle = await Prompt.findOne({
     where: { prompt_title: input.prompt_title }
   })
-  if (findTitle) throw new Error('prompt_title must not be the same as information in dababase.');
+  if (findTitle) throw new Error('หัวข้อ Prompt ห้ามซ้ำกัน');
 
   const message = `เพิ่มข้อมูล: หัวข้อ Prompt: ${input.prompt_title} รายละเอียด Prompt: ${input.prompt_detail}`;
 
@@ -47,7 +47,7 @@ exports.updatePrompt = async (id, input, ctx) => {
     },
   });
   if (findTitle) {
-    throw new Error("Prompt title already exists");
+    throw new Error("หัวข้อ Prompt ห้ามซ้ำกัน");
   }
 
   console.log(row.prompt_detail);

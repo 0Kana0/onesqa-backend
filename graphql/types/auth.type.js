@@ -41,6 +41,7 @@ module.exports = `
 
   type Message {
     message: String!
+    method: String
   }
 
   input SigninInput {

@@ -27,6 +27,9 @@ module.exports = {
       activity: {
         type: Sequelize.BOOLEAN
       },
+      is_notification: {
+        type: Sequelize.BOOLEAN, defaultValue: false
+      },
       createdAt: {
         allowNull: false,
         type: Sequelize.DATE

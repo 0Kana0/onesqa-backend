@@ -13,6 +13,6 @@ module.exports = `
 
   type Mutation {
     singleUpload(file: Upload!): File!
-    multipleUpload(files: [Upload!]!): [File!]!
+    multipleUpload(files: [Upload!]!, ai_id: ID!, user_id: ID!): [File!]!
   }
 `;

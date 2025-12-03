@@ -4,6 +4,7 @@ const db = require("../db/models"); // หรือ '../../db/models' ถ้า�
 const { Chat, Ai, Message, File } = db;
 const { encodeCursor, decodeCursor } = require("../utils/cursor");
 const { deleteMultipleFiles } = require("../utils/fileUtils");
+const { checkTokenQuota } = require("../utils/checkTokenQuota");
 
 exports.listChats = async (
   chatgroup_id = null,
@@ -97,6 +98,14 @@ exports.getChatById = async (id) => {
 };
 
 exports.createChat = async (input) => {
+  const { ai_id, user_id } = input;
+  // ห้ามส่งคำถามถ้าเหลือ token ของ user ทั้งหมดเหลือไม่ถึง 15%
+  await checkTokenQuota({
+    aiId: ai_id,
+    userId: user_id,
+    // minPercent: 15, // ไม่ส่งก็ได้ ใช้ค่า default
+  });
+  
   // validation อื่น ๆ เช่น ชื่อห้ามซ้ำ:
   return await Chat.create(input);
 };

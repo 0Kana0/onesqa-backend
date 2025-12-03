@@ -1,8 +1,9 @@
 // controllers/ai.controller.js
 const { Op, fn, col } = require('sequelize');
 const db = require('../db/models'); // หรือ '../../db/models' ถ้าโปรเจกต์คุณใช้ path นั้น
-const { Ai, Chat, Message } = db;
+const { Ai, Chat, Message, User, User_role } = db;
 const { auditLog } = require('../utils/auditLog'); // ปรับ path ให้ตรง
+const { notifyUser } = require("../utils/notifier"); // ที่ไฟล์ service/controller ของคุณ
 const moment = require('moment-timezone');
 
 /**
@@ -95,10 +96,10 @@ exports.getAiById = async (id) => {
 
 exports.createAi = async (input) => {
   if (input.token_count < 0) {
-    throw new Error('token_count must be >= 0');
+    throw new Error('token_count ต้องมากกว่า 0');
   }
   if (input.token_all < 0) {
-    throw new Error('token_all must be >= 0');
+    throw new Error('token_all ต้องมากกว่า 0');
   }
   // validation อื่น ๆ เช่น ชื่อห้ามซ้ำ:
   const exists = await Ai.findOne({ where: { model_name: input.model_name } });
@@ -110,23 +111,34 @@ exports.updateAi = async (id, input, ctx) => {
   const row = await Ai.findByPk(id);
   if (!row) throw new Error('Ai not found');
 
+  // ✅ validate ค่า token
   if (input?.token_count != null && input.token_count < 0) {
-    throw new Error('token_count must be >= 0');
+    throw new Error('token_count ต้องมากกว่า 0');
   }
   if (input?.token_all != null && input.token_all < 0) {
-    throw new Error('token_all must be >= 0');
+    throw new Error('token_all ต้องมากกว่า 0');
   }
 
-  if (input.token_count < row.token_count) {
+  // ✅ ไม่ให้ลด token ลง
+  if (input?.token_count != null && input.token_count < row.token_count) {
     throw new Error('จำนวน token ไม่สามารถเเก้ไขให้ลดลงได้');
   }
 
   console.log("row", row);
   console.log("input", input);
 
+  // flag เอาไว้เช็คว่ามีการเปลี่ยนไหม
+  let shouldResetNotification = false;
+
+  const isStatusChanged =
+    input?.activity !== undefined && row.activity !== input.activity;
+
+  const isTokenChanged =
+    input?.token_count !== undefined && row.token_count !== input.token_count;
+
   //ถ้ามีการเปลี่ยนเเปลงสถานะ ให้ทำการเก็บ log ไว้
-  if (row.activity !== input.activity) {
-    const message = `กำหนด AI Access (${row.model_use_name})`
+  if (isStatusChanged) {
+    const message = `กำหนด AI Access (${row.model_use_name})`;
 
     await auditLog({
       ctx,
@@ -136,12 +148,34 @@ exports.updateAi = async (id, input, ctx) => {
       old_status: row.activity,
       new_status: input?.activity,
     });
+
+    const toThaiApproval = (val) => {
+      if (typeof val === "string")
+        return ["true", "1", "yes", "y"].includes(val.toLowerCase());
+      if (typeof val === "number") return val === 1;
+      return !!val;
+    };
+    const label = (val) => (toThaiApproval(val) ? "อนุมัติ" : "ไม่อนุมัติ");
+
+    // เเจ้งเตือน user ทั้งหมด
+    const allUsers = await User.findAll({
+      attributes: ["id", "email"],
+    });
+    for (const all of allUsers) {
+      await notifyUser({
+        userId: all.id,
+        title: "เเจ้งเตือนตั้งค่า Model ของระบบ",
+        message: `กำหนด AI Activity ของ Model (${row.model_use_name}) จาก ${label(row.activity)} เป็น ${label(input?.activity)}`,
+        type: "INFO",
+        to: all.email,
+      });
+    }
   }
 
-  //ถ้ามีการเปลี่ยนเเปลงจำนวน token ให้ทำการเก็บ log ไว้
-  if (row.token_count !== input.token_count) {
-    const old_message = `จำนวน Token ของ Model (${row.model_use_name}) ${row.token_count.toLocaleString()}`
-    const new_message = `จำนวน Token ของ Model (${row.model_use_name}) ${input.token_count.toLocaleString()}`
+  //ถ้ามีการเปลี่ยนเเปลงจำนวน token ให้ทำการเก็บ log ไว้ + reset is_notification
+  if (isTokenChanged) {
+    const old_message = `จำนวน Token ของ Model (${row.model_use_name}) ${row.token_count.toLocaleString()}`;
+    const new_message = `จำนวน Token ของ Model (${row.model_use_name}) ${input.token_count.toLocaleString()}`;
 
     await auditLog({
       ctx,
@@ -151,11 +185,50 @@ exports.updateAi = async (id, input, ctx) => {
       old_status: null,
       new_status: null,
     });
+
+    // เเจ้งเตือนเฉพาะ admin
+    const adminUsers = await User.findAll({
+      attributes: ["id", "email"],
+      include: [
+        {
+          model: User_role,
+          as: "user_role",
+          where: { role_id: 3 },
+          attributes: [],
+        },
+      ],
+    });
+    for (const admin of adminUsers) {
+      await notifyUser({
+        userId: admin.id,
+        title: "เเจ้งเตือนตั้งค่า Model ของระบบ",
+        message: `จำนวน Token ของ Model (${row.model_use_name}) จาก ${row.token_count.toLocaleString()} เป็น ${input.token_count.toLocaleString()}`,
+        type: "INFO",
+        to: admin.email,
+      });
+    }
+
+    // ✅ มีการเปลี่ยน token → ให้ reset is_notification
+    shouldResetNotification = true;
   }
 
-  await row.update(input);
+  // ❗ ถ้าไม่มีการเปลี่ยนแปลงสถานะ และไม่มีการเปลี่ยนแปลงจำนวน token
+  //    → ไม่ต้องบันทึกลง DB
+  if (!isStatusChanged && !isTokenChanged) {
+    // จะ return row เฉย ๆ หรือจะ throw Error แจ้งก็ได้แล้วแต่ requirement
+    // throw new Error('ไม่มีการเปลี่ยนแปลงสถานะหรือจำนวน token');
+    return row;
+  }
+
+  // สร้าง payload สำหรับ update (อัปเดตเฉพาะเมื่อมีการเปลี่ยน status/token อย่างน้อย 1 อย่าง)
+  const updatePayload = {
+    ...input,
+    ...(shouldResetNotification && { is_notification: false }), // ใส่เฉพาะตอน token เปลี่ยน
+  };
+
+  await row.update(updatePayload);
   return row;
-}
+};
 
 exports.deleteAi = async (id) => {
   const count = await Ai.destroy({ where: { id } });
