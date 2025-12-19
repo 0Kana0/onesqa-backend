@@ -17,7 +17,7 @@ module.exports = `
 
   type CardReport {
     value: Int,
-    percentChange: Int
+    percentChange: Float
   }
 
   type Report {

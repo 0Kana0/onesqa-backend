@@ -23,6 +23,18 @@ module.exports = (sequelize, DataTypes) => {
         onDelete: 'CASCADE',
         hooks: true, // ✅ จำเป็นถ้าใช้ paranoid
       });
+      Ai.hasMany(models.Group, {
+        foreignKey: 'ai_id',
+        as: 'group',
+        onDelete: 'CASCADE',
+        hooks: true, // ✅ จำเป็นถ้าใช้ paranoid
+      });
+      Ai.hasMany(models.Group_ai, {
+        foreignKey: 'ai_id',
+        as: 'group_ai',
+        onDelete: 'CASCADE',
+        hooks: true, // ✅ จำเป็นถ้าใช้ paranoid
+      });
     }
   }
   Ai.init({

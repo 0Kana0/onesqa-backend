@@ -61,7 +61,7 @@ module.exports = `
     group_name: String!
     ai_access: Boolean!
     color_mode: ColorMode!
-    loginAt: DateTime!
+    loginAt: DateTime
     createdAt: DateTime!
     updatedAt: DateTime!
 
@@ -82,15 +82,21 @@ module.exports = `
     totalCount: Int!
   }
 
+  type SyncUser {
+    totalUsersFromApis: Int
+    staffApiCount: Int
+    assessorApiCount: Int
+  }
+
   input UserRoleInput {
     role_id: ID!
+    role_name: String
   }
   input UserAiInput {
     ai_id: ID!
     token_count: Int
     token_all: Int
   }
-
   input UserInput {
     firstname: String
     lastname: String
@@ -117,5 +123,6 @@ module.exports = `
   extend type Mutation {
     updateUser(id: ID!, input: UserInput!): User!
     deleteUser(id: ID!): Boolean!
+    syncUsersFromApi: SyncUser
   }
 `;

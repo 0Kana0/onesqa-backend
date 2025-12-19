@@ -6,7 +6,9 @@ const pubsub = require("../utils/pubsub"); // ✅ ใช้ instance เดี�
 const { encodeCursor, decodeCursor } = require('../utils/cursor');
 
 exports.myNotifications = async (user_id, { first = 20, after } = {}) => {
-  const limit = Math.min(first, 100) + 1; // +1 เพื่อเช็ค hasNextPage
+  const safeFirst = Math.max(1, parseInt(first, 10) || 20);
+  const limit = safeFirst + 1; // +1 เพื่อเช็ค hasNextPage
+
   const where = { user_id };
 
   if (after) {
@@ -29,8 +31,8 @@ exports.myNotifications = async (user_id, { first = 20, after } = {}) => {
     limit,
   });
 
-  const hasNextPage = rows.length > Math.min(first, 100);
-  const slice = hasNextPage ? rows.slice(0, Math.min(first, 100)) : rows;
+  const hasNextPage = rows.length > safeFirst;
+  const slice = hasNextPage ? rows.slice(0, safeFirst) : rows;
 
   const edges = slice.map((row) => ({
     node: row,
@@ -47,7 +49,6 @@ exports.myNotifications = async (user_id, { first = 20, after } = {}) => {
     },
   };
 };
-
 
 exports.createNotification = async (input) => {
   const { user_id, title, message, type } = input;

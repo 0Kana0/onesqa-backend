@@ -5,14 +5,22 @@ const { Chatgroup, Chat } = db;
 const { encodeCursor, decodeCursor } = require('../utils/cursor');
 
 exports.listChatgroups = async (
+  id,
   user_id,
   { first = 20, after, search } = {}
 ) => {
-  const pageSize = Math.min(Number(first), 100);
+  const pageSize = Math.max(1, parseInt(first, 10) || 20);
   const limit = pageSize + 1; // +1 เพื่อเช็ค hasNextPage
 
   // --- AND เงื่อนไขหลัก ---
   const andConds = [{ user_id }];
+
+  // --- ตัด chatgroup ที่มี id เท่ากับค่าที่ส่งมา ---
+  if (id != null) {
+    andConds.push({
+      id: { [Op.ne]: id }   // != id
+    });
+  }
 
   // --- ค้นหาชื่อกลุ่ม ---
   if (search && search.trim() !== '') {
@@ -34,7 +42,7 @@ exports.listChatgroups = async (
   const rows = await Chatgroup.findAll({
     where: { [Op.and]: andConds },
     order: [
-      ['createdAt', 'DESC'],
+      ['updatedAt', 'DESC'],
       ['id', 'DESC'],
     ],
     limit,
@@ -73,10 +81,12 @@ exports.listChatgroups = async (
   };
 };
 
+exports.getChatgroupById = async (id, user_id) => {
+  const where = { id };
+  if (user_id != null) where.user_id = user_id; // ✅ มีค่าเมื่อไหร่ค่อยกรอง
 
-exports.getChatgroupById = async (id) => {
-  return await Chatgroup.findByPk(id);
-}
+  return await Chatgroup.findOne({ where });
+};
 
 exports.createChatgroup = async (input) => {
   // validation อื่น ๆ เช่น ชื่อห้ามซ้ำ:

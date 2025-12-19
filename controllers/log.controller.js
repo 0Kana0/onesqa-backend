@@ -3,7 +3,7 @@ const db = require('../db/models'); // หรือ '../../db/models' ถ้า�
 const { Log } = db;
 
 exports.listLogs = async ({ page, pageSize, where = {} }) => {
-  const limit = Math.min(Math.max(Number(pageSize) || 5, 1), 100);
+  const limit = Math.max(parseInt(pageSize, 10) || 5, 1);
   const p = Math.max(Number(page) || 1, 1);
   const offset = (p - 1) * limit;
 

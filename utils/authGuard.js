@@ -1,5 +1,5 @@
 exports.requireAuth = (ctx) => {
-  console.log(ctx?.req?.user);
+  console.log("ctx", ctx?.req?.user);
   
   if (ctx?.req?.user === null || ctx?.req?.user == undefined) {
     console.log("Unauthorized");

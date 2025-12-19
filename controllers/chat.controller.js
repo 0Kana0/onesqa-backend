@@ -11,7 +11,8 @@ exports.listChats = async (
   user_id,
   { first = 20, after, search, chatgroupMode = "ALL" } = {}
 ) => {
-  const limit = Math.min(first, 100) + 1; // +1 เพื่อเช็ค hasNextPage
+  const safeFirst = Math.max(1, parseInt(first, 10) || 20);
+  const limit = safeFirst + 1; // +1 เพื่อเช็ค hasNextPage
 
   // สร้าง AND เงื่อนไขหลัก
   const andConds = [{ user_id }];
@@ -48,25 +49,25 @@ exports.listChats = async (
     });
   }
 
-  const includeAi = {
-    model: Ai,
-    as: "ai",
-    attributes: ["model_name", "model_use_name", "model_type"],
-    required: false,
-  };
-
   const rows = await Chat.findAll({
     where: { [Op.and]: andConds },
-    include: [includeAi],
+    include: [
+      {
+        model: Ai,
+        as: "ai",
+        attributes: ["model_name", "model_use_name", "model_type"],
+        required: false,
+      },
+    ],
     order: [
-      ["createdAt", "DESC"],
+      ["updatedAt", "DESC"],
       ["id", "DESC"],
     ],
     limit,
   });
 
-  const hasNextPage = rows.length > Math.min(first, 100);
-  const slice = hasNextPage ? rows.slice(0, Math.min(first, 100)) : rows;
+  const hasNextPage = rows.length > safeFirst;
+  const slice = hasNextPage ? rows.slice(0, safeFirst) : rows;
 
   const edges = slice.map((row) => ({
     node: row,
@@ -84,8 +85,12 @@ exports.listChats = async (
   };
 };
 
-exports.getChatById = async (id) => {
-  return await Chat.findByPk(id, {
+exports.getChatById = async (id, user_id) => {
+  const where = { id };
+  if (user_id != null) where.user_id = user_id; // ✅ มีค่าเมื่อไหร่ค่อยกรอง
+
+  return await Chat.findOne({
+    where,
     include: [
       {
         model: Ai,

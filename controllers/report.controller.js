@@ -1,7 +1,7 @@
 // controllers/role.controller.js
 const { Op, fn, col, literal, QueryTypes } = require('sequelize');
 const db = require("../db/models"); // หรือ '../../db/models' ถ้าโปรเจกต์คุณใช้ path นั้น
-const { Chat, Message, User, Ai } = db;
+const { Chat, Message, User, Ai, User_token } = db;
 const moment = require("moment-timezone");
 
 /**
@@ -25,80 +25,92 @@ const RANK_COLORS = {
 moment.tz.setDefault("Asia/Bangkok");
 
 exports.listReports = async ({ page, pageSize, where = {} }) => {
-  const limit = Math.min(Math.max(Number(pageSize) || 5, 1), 100);
+  const limit = Math.max(parseInt(pageSize, 10) || 5, 1);
   const p = Math.max(Number(page) || 1, 1);
   const offset = (p - 1) * limit;
 
   const { startDate, endDate } = where || {};
+  const TZ = "Asia/Bangkok";
 
-  // --- สร้างช่วงเวลาแบบ [start, nextDay) ในโซนเวลาไทย ---
   // --- ช่วงเวลาแบบ [start, nextDay) โซนไทย ---
-  const whereClause = {};
   let startParam = null;
   let endParam = null;
+
   if (startDate) startParam = new Date(`${startDate}T00:00:00.000+07:00`);
   if (endDate) {
     const nextDay = new Date(`${endDate}T00:00:00.000+07:00`);
-    nextDay.setDate(nextDay.getDate() + 1); // exclusive
+    nextDay.setDate(nextDay.getDate() + 1);
     endParam = nextDay;
   }
-  if (startParam || endParam) {
-    whereClause.createdAt = {};
-    if (startParam) whereClause.createdAt[Op.gte] = startParam;
-    if (endParam) whereClause.createdAt[Op.lt] = endParam;
-  }
 
-  const rows = await Message.findAll({
-    attributes: [
-      // ✅ เลขลำดับต่อเนื่องตามลำดับเรียงผลลัพธ์
-      [literal(`ROW_NUMBER() OVER (ORDER BY ${tzDaySql} DESC, "chat"."user_id" DESC)`), 'id'],
-      [col('chat.user_id'), 'user_id'],
-      // เอา fullname = firstname + ' ' + lastname
-      [
-        fn('MIN', literal(`"chat->user"."firstname" || ' ' || "chat->user"."lastname"`)),
-        'user'
-      ],
-      [fn('MIN', col('chat->user.position')), 'position'],
-      [tzDay, 'date'],
-      [literal(`FLOOR(COUNT("Message"."id") / 2.0)::int`), 'chats'],
-      [fn('COALESCE', fn('SUM', col('Message.total_token')), 0), 'tokens'],
-    ],
-    include: [
-      {
-        model: Chat,
-        as: 'chat',
-        attributes: [],
-        required: true,
-        include: [{ model: User, as: 'user', attributes: [] }],
-      },
-    ],
-    group: [col('chat.user_id'), tzDay],
-    order: [[tzDay, 'DESC'], [col('chat.user_id'), 'DESC']],
-    where: whereClause,
+  const sequelize = User_token.sequelize;
+
+  const repl = {
+    tz: TZ,
+    start: startParam,
+    end: endParam,
     limit,
     offset,
-    raw: true,
-  });
+  };
 
-  // --- totalCount = จำนวนกลุ่มทั้งหมดหลัง group (user_id + day) ---
-  const sequelize = Message.sequelize;
-  const tzDaySqlCount = `("m"."createdAt" AT TIME ZONE '${TZ}')::date`;
-  const whereParts = [];
-  const repl = {};
-
-  if (startParam) { whereParts.push(`m."createdAt" >= :start`); repl.start = startParam; }
-  if (endParam)   { whereParts.push(`m."createdAt" <  :end`);   repl.end   = endParam; }
-  const whereSql = whereParts.length ? `WHERE ${whereParts.join(' AND ')}` : '';
-
-  const countSql = `
-    SELECT COUNT(*)::int AS cnt
-    FROM (
-      SELECT c.user_id, ${tzDaySqlCount} AS date
+  // ✅ base = message (ได้ chats แบบเดิม) แล้ว LEFT JOIN tokens จาก user_token
+  const itemsSql = `
+    WITH msg_chats AS (
+      SELECT
+        c.user_id,
+        (m."createdAt" AT TIME ZONE :tz)::date AS date,
+        FLOOR(COUNT(m.id) / 2.0)::int AS chats
       FROM message m
       JOIN chat c ON c.id = m.chat_id
-      ${whereSql}
+      WHERE (:start IS NULL OR m."createdAt" >= :start)
+        AND (:end   IS NULL OR m."createdAt" <  :end)
       GROUP BY c.user_id, date
-    ) t;
+    ),
+    ut_tokens AS (
+      SELECT
+        ut.user_id,
+        (ut."createdAt" AT TIME ZONE :tz)::date AS date,
+        COALESCE(SUM(ut.total_token), 0)::bigint AS tokens
+      FROM user_token ut
+      WHERE (:start IS NULL OR ut."createdAt" >= :start)
+        AND (:end   IS NULL OR ut."createdAt" <  :end)
+      GROUP BY ut.user_id, date
+    )
+    SELECT
+      ROW_NUMBER() OVER (ORDER BY mc.date DESC, mc.user_id DESC) AS id,
+      mc.user_id,
+      COALESCE(u.firstname || ' ' || u.lastname, '-') AS "user",
+      u.position AS position,
+      mc.date AS date,
+      mc.chats AS chats,
+      COALESCE(ut.tokens, 0) AS tokens
+    FROM msg_chats mc
+    LEFT JOIN ut_tokens ut
+      ON ut.user_id = mc.user_id AND ut.date = mc.date
+    LEFT JOIN "user" u
+      ON u.id = mc.user_id
+    ORDER BY mc.date DESC, mc.user_id DESC
+    LIMIT :limit OFFSET :offset;
+  `;
+
+  const rows = await sequelize.query(itemsSql, {
+    replacements: repl,
+    type: QueryTypes.SELECT,
+  });
+
+  // ✅ totalCount แบบเดิม: นับจำนวนกลุ่ม (user_id + day) จาก message
+  const countSql = `
+    WITH msg_chats AS (
+      SELECT
+        c.user_id,
+        (m."createdAt" AT TIME ZONE :tz)::date AS date
+      FROM message m
+      JOIN chat c ON c.id = m.chat_id
+      WHERE (:start IS NULL OR m."createdAt" >= :start)
+        AND (:end   IS NULL OR m."createdAt" <  :end)
+      GROUP BY c.user_id, date
+    )
+    SELECT COUNT(*)::int AS cnt FROM msg_chats;
   `;
 
   const [{ cnt: totalCount }] = await sequelize.query(countSql, {
@@ -139,12 +151,15 @@ exports.CardMessageReports = async () => {
 
     const diff = thisMonth - lastMonth;
 
-    // ถ้าเดือนที่แล้วเป็น 0 → ตั้งเป็น null (เลี่ยงหารศูนย์)
-    const percentChange = lastMonth === 0 ? 0 : Math.round((diff / lastMonth) * 100);
+    // ถ้าเดือนที่แล้วเป็น 0 → เลี่ยงหารศูนย์
+    const percentChange =
+      lastMonth === 0
+        ? 0
+        : Number(((diff / lastMonth) * 100).toFixed(2));
 
     return {
       value: Math.floor(thisMonth / 2), // ตาม logic เดิมของคุณ
-      percentChange,
+      percentChange, // decimal 2 หลัก
     };
   } catch (e) {
     // กันทุกอย่างอีกชั้น (เช่น moment/Op/Model ยังไม่พร้อม)
@@ -157,24 +172,24 @@ exports.CardMessageReports = async () => {
 
 exports.CardTokenReports = async () => {
   try {
-    const TZ = 'Asia/Bangkok';
-    const startThisMonth = moment.tz(TZ).startOf('month').toDate();
-    const endThisMonth   = moment(startThisMonth).add(1, 'month').toDate();
+    const TZ = "Asia/Bangkok";
 
-    const startLastMonth = moment(startThisMonth).subtract(1, 'month').toDate();
-    const endLastMonth   = startThisMonth;
+    // ✅ ขอบเขตเดือนตามเวลาไทย แล้วแปลงเป็น Date (UTC instant) เพื่อ query createdAt
+    const startThisMonth = moment.tz(TZ).startOf("month").toDate();
+    const endThisMonth = moment.tz(TZ).startOf("month").add(1, "month").toDate();
 
-    // กันกรณี sum โยน error → ให้เป็น 0
+    const startLastMonth = moment.tz(TZ).startOf("month").subtract(1, "month").toDate();
+    const endLastMonth = startThisMonth;
+
     const [sumThisRaw, sumLastRaw] = await Promise.all([
-      Message.sum('total_token', {
+      User_token.sum("total_token", {
         where: { createdAt: { [Op.gte]: startThisMonth, [Op.lt]: endThisMonth } },
       }).catch(() => 0),
-      Message.sum('total_token', {
+      User_token.sum("total_token", {
         where: { createdAt: { [Op.gte]: startLastMonth, [Op.lt]: endLastMonth } },
       }).catch(() => 0),
     ]);
 
-    // แปลงค่าให้เป็น number เสมอ (รองรับ DECIMAL ที่ Sequelize อาจให้มาเป็น string)
     const normalize = (v) => {
       if (v == null) return 0;
       const n = Number(v);
@@ -185,169 +200,165 @@ exports.CardTokenReports = async () => {
     const lastMonth = normalize(sumLastRaw);
 
     const diff = thisMonth - lastMonth;
-    const percentChange = lastMonth === 0 ? 0 : Math.round((diff / lastMonth) * 100);
+
+    const percentChange =
+      lastMonth === 0 ? 0 : Number(((diff / lastMonth) * 100).toFixed(2));
 
     return {
-      value: thisMonth,   // ผลรวม token เดือนนี้
+      value: thisMonth,
       percentChange,
     };
   } catch (e) {
-    // กันทุกกรณีที่นอกเหนือจาก query (เช่น import/Op/moment มีปัญหา)
-    return {
-      value: 0,
-      percentChange: 0,
-    };
+    return { value: 0, percentChange: 0 };
   }
 };
 
-exports.ChartReports = async ({ startDate, endDate  }) => {
-  const tz = 'Asia/Bangkok'
-  const createdAtMode = 'auto'
-  const activeOnly = false
+exports.ChartReports = async ({ startDate, endDate }) => {
+  const tz = "Asia/Bangkok";
+  const createdAtMode = "auto";
+  const activeOnly = false;
 
-  // 1) สร้างช่วงเวลาไทย [start 00:00(+07), end(+1) 00:00(+07)) แล้วแปลงเป็น UTC สำหรับ where
+  // 1) สร้างช่วงเวลาไทย แล้วแปลงเป็น UTC สำหรับ where createdAt
   const nowTH = moment.tz(tz);
 
   const startTH = startDate
-    ? moment.tz(`${startDate} 00:00:00`, 'YYYY-MM-DD HH:mm:ss', tz)
-    : nowTH.clone().startOf('day').subtract(29, 'days');
+    ? moment.tz(`${startDate} 00:00:00`, "YYYY-MM-DD HH:mm:ss", tz)
+    : nowTH.clone().startOf("day").subtract(29, "days");
 
   const endTHExclusive = endDate
-    ? moment.tz(`${endDate} 00:00:00`, 'YYYY-MM-DD HH:mm:ss', tz).add(1, 'day')
-    : nowTH.clone().endOf('day').add(1, 'millisecond'); // ครอบคลุมถึงสิ้นวันนี้
+    ? moment.tz(`${endDate} 00:00:00`, "YYYY-MM-DD HH:mm:ss", tz).add(1, "day")
+    : nowTH.clone().endOf("day").add(1, "millisecond");
 
-  const startUTC = startTH.clone().tz('UTC');
-  const endUTC   = endTHExclusive.clone().tz('UTC');
+  const startUTC = startTH.clone().tz("UTC");
+  const endUTC = endTHExclusive.clone().tz("UTC");
 
   const whereClause = {
     createdAt: {
       [Op.gte]: startUTC.toDate(),
-      [Op.lt]:  endUTC.toDate(),
+      [Op.lt]: endUTC.toDate(),
     },
   };
 
-  // ===== 2) นิพจน์ตัดวันตามเวลาไทยไว้ group =====
+  // 2) นิพจน์ตัดวันตามเวลาไทยไว้ group
   const dayExpr =
-    createdAtMode === 'timestamp'
-      ? `DATE_TRUNC('day', ("Message"."createdAt" AT TIME ZONE 'UTC' AT TIME ZONE '${tz}'))`
-      : `DATE_TRUNC('day', ("Message"."createdAt" AT TIME ZONE '${tz}'))`;
+    createdAtMode === "timestamp"
+      ? `DATE_TRUNC('day', ("User_token"."createdAt" AT TIME ZONE 'UTC' AT TIME ZONE '${tz}'))`
+      : `DATE_TRUNC('day', ("User_token"."createdAt" AT TIME ZONE '${tz}'))`;
 
-  // ===== 3) คิวรีรวมจริง (อาจได้ไม่ครบทุกโมเดลในทุกวัน) =====
-  const aggRows = await Message.findAll({
+  // 3) คิวรีรวมจริง: รวม token จาก user_token แยกตามวัน + โมเดล
+  const aggRows = await User_token.findAll({
     attributes: [
-      [literal(dayExpr), 'day_th'],
-      [literal(`"chat->ai"."model_use_name"`), 'model'],
-      [fn('SUM', col('Message.total_token')), 'total_tokens'],
+      [literal(dayExpr), "day_th"],
+      [col("ai.model_use_name"), "model"],
+      [fn("SUM", col("User_token.total_token")), "total_tokens"],
     ],
-    include: [{
-      model: Chat,
-      as: 'chat',
-      attributes: [],
-      include: [{ model: Ai, as: 'ai', attributes: [] }],
-    }],
+    include: [
+      {
+        model: Ai,
+        as: "ai",
+        attributes: [],
+        required: false, // ถ้า ai_id เป็น null ก็ยังให้รวมได้ (model จะเป็น null)
+      },
+    ],
     where: whereClause,
-    group: [literal(dayExpr), literal(`"chat->ai"."model_use_name"`)],
-    order: [[literal('day_th'), 'ASC'], [literal(`"chat->ai"."model_use_name"`), 'ASC']],
+    group: [literal(dayExpr), col("ai.model_use_name")],
+    order: [[literal("day_th"), "ASC"], [col("ai.model_use_name"), "ASC"]],
     raw: true,
   });
 
-  // แปลงเป็น Map key = `${YYYY-MM-DD}|${model}`
+  // Map key = `${YYYY-MM-DD}|${model}`
   const aggMap = new Map();
   for (const r of aggRows) {
-    const d = moment.tz(r.day_th, tz).format('YYYY-MM-DD');
-    const k = `${d}|${r.model}`;
-    aggMap.set(k, Number(r.total_tokens || 0));
+    const d = moment.tz(r.day_th, tz).format("YYYY-MM-DD");
+    const m = r.model ?? "UNKNOWN";
+    aggMap.set(`${d}|${m}`, Number(r.total_tokens || 0));
   }
 
-  // ===== 4) โหลดรายชื่อโมเดลทั้งหมด =====
+  // 4) โหลดรายชื่อโมเดลทั้งหมด
   const aiWhere = activeOnly ? { activity: true } : {};
   const aiList = await Ai.findAll({
-    attributes: ['model_use_name'],
+    attributes: ["model_use_name"],
     where: aiWhere,
     raw: true,
   });
-  const models = aiList.map(a => a.model_use_name).sort();
+  const models = aiList.map((a) => a.model_use_name).sort();
 
-  // ถ้าไม่มีโมเดลเลย ก็ตัดจบ
   if (models.length === 0) return [];
 
-  // ===== 5) สร้างอาร์เรย์วันตั้งแต่ start ถึง end-1day (ไทย) =====
+  // 5) สร้างอาร์เรย์วัน (ไทย)
   const days = [];
-  for (let cur = startTH.clone(); cur.isBefore(endTHExclusive); cur.add(1, 'day')) {
-    days.push(cur.format('YYYY-MM-DD'));
+  for (let cur = startTH.clone(); cur.isBefore(endTHExclusive); cur.add(1, "day")) {
+    days.push(cur.format("YYYY-MM-DD"));
   }
 
-  // ===== 6) เติมผลให้ครบ วัน × โมเดล (ถ้าไม่มี ให้ 0) =====
+  // 6) เติมให้ครบ วัน × โมเดล
   const dense = [];
   for (const d of days) {
     for (const m of models) {
-      const k = `${d}|${m}`;
       dense.push({
         date: d,
         model: m,
-        total_tokens: aggMap.get(k) ?? 0,
+        total_tokens: aggMap.get(`${d}|${m}`) ?? 0,
       });
     }
   }
 
-  //console.log(dense);
-
-  return dense; // เรียงตามวันก่อน แล้วค่อยเรียงตามชื่อโมเดล
-}
+  return dense;
+};
 
 exports.TopFiveReports = async () => {
-  // เริ่มเดือนนี้และต้นเดือนถัดไป ในโซนเวลาไทย
-  const startOfMonth = moment.tz(TZ).startOf('month').toDate();
-  const startOfNextMonth = moment.tz(TZ).add(1, 'month').startOf('month').toDate();
+  const TZ = "Asia/Bangkok";
 
-  const rows = await Message.findAll({
-    attributes: [
-      [col('chat.user_id'), 'user_id'],
-      [
-        fn(
-          'MIN',
-          literal(`"chat->user"."firstname" || ' ' || "chat->user"."lastname"`)
-        ),
-        'name'
-      ],
-      [literal(`FLOOR(COUNT("Message"."id") / 2.0)::int`), 'chats'],
-      [fn('COALESCE', fn('SUM', col('Message.total_token')), 0), 'tokens'],
-    ],
-    include: [
-      {
-        model: Chat,
-        as: 'chat',
-        attributes: [],
-        required: true,
-        include: [{ model: User, as: 'user', attributes: [] }],
-      },
-    ],
-    // เฉพาะข้อมูลในเดือนปัจจุบันตามโซนเวลาไทย
-    where: {
-      createdAt: {
-        [Op.gte]: startOfMonth,      // >= ต้นเดือนนี้ (ตาม TZ)
-        [Op.lt]: startOfNextMonth,   // < ต้นเดือนถัดไป (ตาม TZ)
-      },
-    },
-    group: [col('chat.user_id')],
-    order: [
-      // เรียงตามผลรวม token มาก -> น้อย
-      [fn('COALESCE', fn('SUM', col('Message.total_token')), 0), 'DESC'],
-      [col('chat.user_id'), 'DESC'], // กันกรณีคะแนนเท่ากัน
-    ],
-    limit: 5,   // เอา 5 คนแรก
-    raw: true,
+  // ✅ ช่วงเดือนปัจจุบันตามเวลาไทย แล้วแปลงเป็น Date สำหรับ where createdAt
+  const startOfMonth = moment.tz(TZ).startOf("month").toDate();
+  const startOfNextMonth = moment.tz(TZ).add(1, "month").startOf("month").toDate();
+
+  const sequelize = User_token.sequelize;
+
+  const sql = `
+    WITH msg_chats AS (
+      SELECT
+        c.user_id,
+        FLOOR(COUNT(m.id) / 2.0)::int AS chats
+      FROM message m
+      JOIN chat c ON c.id = m.chat_id
+      WHERE m."createdAt" >= :start
+        AND m."createdAt" <  :end
+      GROUP BY c.user_id
+    ),
+    ut_tokens AS (
+      SELECT
+        ut.user_id,
+        COALESCE(SUM(ut.total_token), 0)::bigint AS tokens
+      FROM user_token ut
+      WHERE ut."createdAt" >= :start
+        AND ut."createdAt" <  :end
+      GROUP BY ut.user_id
+    )
+    SELECT
+      mc.user_id,
+      COALESCE(u.firstname || ' ' || u.lastname, '-') AS name,
+      mc.chats,
+      COALESCE(ut.tokens, 0) AS tokens
+    FROM msg_chats mc
+    LEFT JOIN ut_tokens ut
+      ON ut.user_id = mc.user_id
+    LEFT JOIN "user" u
+      ON u.id = mc.user_id
+    ORDER BY COALESCE(ut.tokens, 0) DESC, mc.user_id DESC
+    LIMIT 5;
+  `;
+
+  const rows = await sequelize.query(sql, {
+    replacements: { start: startOfMonth, end: startOfNextMonth },
+    type: QueryTypes.SELECT,
   });
 
-  // (ถ้าอยากมีลำดับ 1-5)
-  const items = rows.map((r, i) => ({ 
-    rank: i + 1, 
-    color: RANK_COLORS[i+1] ?? '#F2F2F2',
-    ...r, 
+  const items = rows.map((r, i) => ({
+    rank: i + 1,
+    color: RANK_COLORS[i + 1] ?? "#F2F2F2",
+    ...r,
   }));
 
-  console.log(items);
-  
-  // ไม่มี pagination ตามที่ขอ
   return items;
-}
+};

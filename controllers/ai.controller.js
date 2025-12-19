@@ -1,7 +1,7 @@
 // controllers/ai.controller.js
 const { Op, fn, col } = require('sequelize');
 const db = require('../db/models'); // หรือ '../../db/models' ถ้าโปรเจกต์คุณใช้ path นั้น
-const { Ai, Chat, Message, User, User_role } = db;
+const { Ai, Chat, Message, User, User_role, User_ai, Group, Group_ai, User_token } = db;
 const { auditLog } = require('../utils/auditLog'); // ปรับ path ให้ตรง
 const { notifyUser } = require("../utils/notifier"); // ที่ไฟล์ service/controller ของคุณ
 const moment = require('moment-timezone');
@@ -15,73 +15,64 @@ const TZ = 'Asia/Bangkok';
 
 exports.listAis = async () => {
   // ขอบเขตเวลาโซนไทย
-  const startOfToday     = moment.tz(TZ).startOf('day').toDate();
-  const startOfTomorrow  = moment.tz(TZ).add(1, 'day').startOf('day').toDate();
-  const startOfMonth     = moment.tz(TZ).startOf('month').toDate();
-  const startOfNextMonth = moment.tz(TZ).add(1, 'month').startOf('month').toDate();
-  const daysElapsed      = moment.tz(TZ).diff(moment(startOfMonth), 'days') + 1;
+  const nowTH = moment.tz(TZ);
+  const startMonthTH = nowTH.clone().startOf("month");
+
+  const startOfToday = nowTH.clone().startOf("day").toDate();
+  const startOfTomorrow = nowTH.clone().add(1, "day").startOf("day").toDate();
+  const startOfMonth = startMonthTH.toDate();
+  const startOfNextMonth = startMonthTH.clone().add(1, "month").toDate();
+
+  const daysElapsed = nowTH.diff(startMonthTH, "days") + 1;
 
   // 1) รายการ Ai ตามเดิม
   const ais = await Ai.findAll({
-    order: [['id', 'ASC']],
+    order: [["id", "ASC"]],
     raw: true,
   });
 
-  // 2) รวม token "วันนี้" ต่อ Ai (LEFT JOIN ผ่าน include + required:false)
-  const todayAgg = await Ai.findAll({
+  // 2) รวม token "วันนี้" ต่อ Ai จาก user_token
+  const todayAgg = await User_token.findAll({
     attributes: [
-      ['id', 'ai_id'],
-      [fn('COALESCE', fn('SUM', col('chat->message.total_token')), 0), 'tokens_today'],
+      ["ai_id", "ai_id"],
+      [fn("COALESCE", fn("SUM", col("total_token")), 0), "tokens_today"],
     ],
-    include: [{
-      model: Chat,
-      as: 'chat',
-      attributes: [],
-      required: false,
-      include: [{
-        model: Message,
-        as: 'message',
-        attributes: [],
-        required: false,
-        where: { createdAt: { [Op.gte]: startOfToday, [Op.lt]: startOfTomorrow } },
-      }],
-    }],
-    group: [col('Ai.id')],
+    where: {
+      ai_id: { [Op.ne]: null },
+      createdAt: { [Op.gte]: startOfToday, [Op.lt]: startOfTomorrow },
+    },
+    group: ["ai_id"],
     raw: true,
   });
 
-  // 3) รวม token "เดือนนี้" ต่อ Ai (ใช้คำนวณค่าเฉลี่ยต่อวัน)
-  const monthAgg = await Ai.findAll({
+  // 3) รวม token "เดือนนี้" ต่อ Ai จาก user_token (ไว้หาเฉลี่ยต่อวัน)
+  const monthAgg = await User_token.findAll({
     attributes: [
-      ['id', 'ai_id'],
-      [fn('COALESCE', fn('SUM', col('chat->message.total_token')), 0), 'tokens_month'],
+      ["ai_id", "ai_id"],
+      [fn("COALESCE", fn("SUM", col("total_token")), 0), "tokens_month"],
     ],
-    include: [{
-      model: Chat,
-      as: 'chat',
-      attributes: [],
-      required: false,
-      include: [{
-        model: Message,
-        as: 'message',
-        attributes: [],
-        required: false,
-        where: { createdAt: { [Op.gte]: startOfMonth, [Op.lt]: startOfNextMonth } },
-      }],
-    }],
-    group: [col('Ai.id')],
+    where: {
+      ai_id: { [Op.ne]: null },
+      createdAt: { [Op.gte]: startOfMonth, [Op.lt]: startOfNextMonth },
+    },
+    group: ["ai_id"],
     raw: true,
   });
 
   // 4) ทำเป็น map เพื่อ join กลับเข้า ais
-  const todayMap = new Map(todayAgg.map(r => [String(r.ai_id), Number(r.tokens_today) || 0]));
-  const monthMap = new Map(monthAgg.map(r => [String(r.ai_id), Number(r.tokens_month) || 0]));
+  const todayMap = new Map(
+    todayAgg.map((r) => [String(r.ai_id), Number(r.tokens_today) || 0])
+  );
+  const monthMap = new Map(
+    monthAgg.map((r) => [String(r.ai_id), Number(r.tokens_month) || 0])
+  );
 
-  // 5) คืนผล พร้อมฟิลด์ today และ average (ปัดเป็นจำนวนเต็ม)
+  // 5) คืนผล พร้อมฟิลด์ today และ average
   return ais.map((item) => {
-    const tokensToday  = todayMap.get(String(item.id))  ?? 0;
-    const tokensMonth  = monthMap.get(String(item.id))  ?? 0;
-    const averageDay   = Math.round(tokensMonth / daysElapsed);
+    const tokensToday = todayMap.get(String(item.id)) ?? 0;
+    const tokensMonth = monthMap.get(String(item.id)) ?? 0;
+    const averageDay = daysElapsed > 0 ? Math.round(tokensMonth / daysElapsed) : 0;
+
     return {
       ...item,
       today: tokensToday,
@@ -94,18 +85,74 @@ exports.getAiById = async (id) => {
   return await Ai.findByPk(id);
 }
 
+/**
+ * สร้าง Ai ใหม่ + map ไปยัง User_ai และ Group_ai ให้ทุก user / group
+ */
 exports.createAi = async (input) => {
-  if (input.token_count < 0) {
-    throw new Error('token_count ต้องมากกว่า 0');
-  }
-  if (input.token_all < 0) {
-    throw new Error('token_all ต้องมากกว่า 0');
-  }
-  // validation อื่น ๆ เช่น ชื่อห้ามซ้ำ:
-  const exists = await Ai.findOne({ where: { model_name: input.model_name } });
-  if (exists) throw new Error('model_name already exists');
-  return await Ai.create(input);
-}
+  // ใช้ transaction เพื่อให้ทุกอย่างสำเร็จหรือพังพร้อมกัน
+  return await db.sequelize.transaction(async (t) => {
+    // 1) validation เดิม
+    if (input.token_count < 0) {
+      throw new Error("token_count ต้องมากกว่า 0");
+    }
+    if (input.token_all < 0) {
+      throw new Error("token_all ต้องมากกว่า 0");
+    }
+
+    // ชื่อ model ห้ามซ้ำ
+    const exists = await Ai.findOne({
+      where: { model_name: input.model_name },
+      transaction: t,
+    });
+    if (exists) throw new Error("model_name already exists");
+
+    // 2) สร้าง Ai ใหม่
+    const ai = await Ai.create(input, { transaction: t });
+
+    // 3) ดึง user ทั้งหมด แล้วสร้าง User_ai ให้ทุกคน
+    const users = await User.findAll({
+      attributes: ["id"],
+      transaction: t,
+    });
+
+    if (users.length > 0) {
+      const now = new Date();
+      const userAiRows = users.map((u) => ({
+        user_id: u.id,
+        ai_id: ai.id,
+        token_count: 0,      // ค่าเริ่มต้น ปรับได้ตาม schema จริง
+        token_all: 0,      // ค่าเริ่มต้น ปรับได้ตาม schema จริง
+        is_notification: false,      // ค่าเริ่มต้น ปรับได้ตาม schema จริง
+        createdAt: now,
+        updatedAt: now,
+      }));
+
+      await User_ai.bulkCreate(userAiRows, { transaction: t });
+    }
+
+    // 4) ดึง group ทั้งหมด แล้วสร้าง Group_ai ให้ทุก group
+    const groups = await Group.findAll({
+      attributes: ["id"],
+      transaction: t,
+    });
+
+    if (groups.length > 0) {
+      const now = new Date();
+      const groupAiRows = groups.map((g) => ({
+        group_id: g.id,
+        ai_id: ai.id,
+        init_token: 0,      // ค่าเริ่มต้น ปรับได้ตาม schema จริง
+        createdAt: now,
+        updatedAt: now,
+      }));
+
+      await Group_ai.bulkCreate(groupAiRows, { transaction: t });
+    }
+
+    // ส่ง Ai ที่สร้างกลับไป
+    return ai;
+  });
+};
 
 exports.updateAi = async (id, input, ctx) => {
   const row = await Ai.findByPk(id);
@@ -134,7 +181,7 @@ exports.updateAi = async (id, input, ctx) => {
     input?.activity !== undefined && row.activity !== input.activity;
 
   const isTokenChanged =
-    input?.token_count !== undefined && row.token_count !== input.token_count;
+    input?.token_count !== undefined && Number(row.token_count) !== Number(input.token_count);
 
   //ถ้ามีการเปลี่ยนเเปลงสถานะ ให้ทำการเก็บ log ไว้
   if (isStatusChanged) {
@@ -193,7 +240,9 @@ exports.updateAi = async (id, input, ctx) => {
         {
           model: User_role,
           as: "user_role",
-          where: { role_id: 3 },
+          where: { 
+            role_id: { [Op.in]: [3, 4] }   // role_id = 3 หรือ 4
+          },
           attributes: [],
         },
       ],

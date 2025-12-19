@@ -3,7 +3,7 @@ const {
   Model
 } = require('sequelize');
 module.exports = (sequelize, DataTypes) => {
-  class Log extends Model {
+  class Group_ai extends Model {
     /**
      * Helper method for defining associations.
      * This method is not a part of Sequelize lifecycle.
@@ -11,25 +11,26 @@ module.exports = (sequelize, DataTypes) => {
      */
     static associate(models) {
       // define association here
+      Group_ai.belongsTo(models.Group, { 
+        foreignKey: 'group_id', 
+        as: 'group' 
+      });
+      Group_ai.belongsTo(models.Ai, { 
+        foreignKey: 'ai_id', 
+        as: 'ai' 
+      });
     }
   }
-  Log.init({
-    edit_name: DataTypes.STRING,
-    log_type: {
-      type: DataTypes.ENUM('PROMPT', 'ALERT', 'MODEL', 'PERSONAL', 'GROUP', 'ROLE'),
-      allowNull: false,
-      //defaultValue: 'NORMAL',
-    },
-    old_data: DataTypes.TEXT,
-    new_data: DataTypes.TEXT,
-    old_status: DataTypes.BOOLEAN,
-    new_status: DataTypes.BOOLEAN
+  Group_ai.init({
+    group_id: DataTypes.INTEGER,
+    ai_id: DataTypes.INTEGER,
+    init_token: DataTypes.INTEGER
   }, {
     sequelize,
     freezeTableName: true,
     timestamps: true, // ต้องเปิด timestamps ด้วย
-    modelName: 'Log',
-    tableName: 'log'
+    modelName: 'Group_ai',
+    tableName: 'group_ai'
   });
-  return Log;
+  return Group_ai;
 };

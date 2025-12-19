@@ -73,7 +73,7 @@ async function notifyUser(opts = {}) {
     pubsub.publish("NOTIFICATION_ADDED", { notificationAdded: noti });
   }
 
-  if (emailSetting.activity === true) {
+  if (emailSetting.activity === true && to) {
     // 3) ส่งอีเมล (optional, non-blocking)
     try {
       await transporter.sendMail({

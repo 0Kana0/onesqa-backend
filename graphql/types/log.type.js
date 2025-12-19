@@ -7,6 +7,7 @@ module.exports = `
     MODEL
     PERSONAL 
     GROUP
+    ROLE
   }
 
   type Log {

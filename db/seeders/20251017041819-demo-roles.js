@@ -19,6 +19,11 @@ module.exports = {
         createdAt: now, 
         updatedAt: now 
       },
+      { 
+        role_name: 'superadmin', 
+        createdAt: now, 
+        updatedAt: now 
+      },
     ];
 
     await queryInterface.sequelize.transaction(async (t) => {
@@ -36,7 +41,7 @@ module.exports = {
 
   async down (queryInterface, Sequelize) {
     await queryInterface.bulkDelete('role', {
-      role_name: ['เจ้าหน้าที่', 'ผู้ประเมินภายนอก', 'ผู้ดูแลระบบ']
+      role_name: ['เจ้าหน้าที่', 'ผู้ประเมินภายนอก', 'ผู้ดูแลระบบ', 'superadmin']
     }, {});
   }
 };

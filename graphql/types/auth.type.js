@@ -20,7 +20,7 @@ module.exports = `
     id: ID!
     firstname: String!
     lastname: String!
-    username: String!
+    # username: String!
     phone: String!
     email: String!
     login_type: LoginType!

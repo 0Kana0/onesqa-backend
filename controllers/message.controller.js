@@ -12,23 +12,37 @@ const { extractTextFromPDF } = require("../utils/pdfConvert.js");
 const { extractTextFromPowerPoint } = require("../utils/powerPointConvert.js");
 const { deleteMultipleFiles } = require("../utils/fileUtils");
 const { removeFirstPrefix, dataUri } = require("../utils/filename.js");
+const { convertWebmToMp3 } = require("../utils/convertWebmToMp3");
 const { checkTokenQuota } = require("../utils/checkTokenQuota");
 const { updateTokenAndNotify } = require("../utils/updateTokenAndNotify");
-const { Message, Chat, Ai, File, User_ai, User, User_role } = db;
+const { upsertDailyUserToken } = require("../utils/upsertDailyUserToken.js");
+const { Message, Chat, Ai, File, User_ai, User, User_role, Chatgroup } = db;
 
-exports.listMessages = async ({ chat_id }) => {
+exports.listMessages = async ({ chat_id, user_id }) => {
+  const include = [
+    // ✅ ใช้ Chat เพื่อกรองตาม user_id (ถ้ามี)
+    {
+      model: Chat,
+      as: "chat",
+      attributes: [], // ไม่ต้องดึง field ของ chat มา แค่ใช้กรอง
+      required: user_id != null, // ถ้ามี user_id ให้บังคับ join เพื่อกรอง
+      ...(user_id != null ? { where: { user_id } } : {}),
+    },
+
+    // ✅ files ของ message
+    {
+      model: File,
+      as: "files",
+      attributes: ["id", "file_name", "original_name", "stored_path"],
+      required: false, // แนะนำ false เพื่อให้ message ที่ไม่มีไฟล์ก็ยังออก
+      separate: true,
+    },
+  ];
+
   return await Message.findAll({
-    where: { chat_id: chat_id },
+    where: { chat_id },
     order: [["id", "ASC"]],
-    include: [
-      {
-        model: File,                // ต้องมี association: Chatgroup.hasMany(Chat, { as: 'chat', foreignKey: 'chatgroup_id' })
-        as: 'files',
-        attributes: ["id", "file_name", "original_name", "stored_path"],
-        required: true, // บังคับว่าต้องแมตช์ role ด้วย
-        separate: true,             // กัน limit/ordering ของ Chatgroup ไม่เพี้ยน
-      },
-    ],
+    include,
   });
 };
 
@@ -277,6 +291,25 @@ exports.createMessage = async (input) => {
                 mimeType: videoText.mimeType,
               },
             };
+          } else if ([".webm"].includes(ext)) {
+            
+            // ดึงไฟล์มาจากที่อยู่ในเครื่อง
+            const filePath_old = path.join(__dirname, "../uploads", filename);
+            console.log(filePath_old);
+
+            const { fileName, mimeType, filePath } = await convertWebmToMp3(filename, filePath_old);
+            //console.log(fileName, mimeType, filePath);
+            
+            // แปลงไฟล์ mp3, mp4
+            const videoText = await uploadAndWait(filePath, `audio/mp3`, fileName);
+            //console.log(mp3Text);
+
+            return {
+              fileData: {
+                fileUri: videoText.uri,
+                mimeType: videoText.mimeType,
+              },
+            };
           } 
 
           // ไฟล์ที่ไม่รองรับ
@@ -332,6 +365,20 @@ exports.createMessage = async (input) => {
     console.log("text", text);
     console.log("response", response);
 
+    // อัพเดทเฉพาะ updatedAt ของ chat
+    // touch updatedAt อย่างเดียว
+    const chatgroupData = await Chatgroup.findByPk(chatOne.chatgroup_id);
+    if (chatgroupData) {
+      await Chatgroup.update(
+        { chatgroup_name: chatgroupData.chatgroup_name },
+        { where: { id: chatOne.chatgroup_id } }
+      );
+    }
+    await Chat.update(
+      { chat_name: chatOne.chat_name },
+      { where: { id: chat_id } }
+    );
+
     // เก็บคำถามลงใน db
     try {
       const sendData = await Message.create({
@@ -366,6 +413,16 @@ exports.createMessage = async (input) => {
           (response?.usageMetadata?.toolUsePromptTokenCount ?? 0),
         total_token: response.usageMetadata.totalTokenCount,
         chat_id: chat_id,
+      });
+    } catch (error) {
+      console.log(error);
+    }
+    
+    try {
+      await upsertDailyUserToken({
+        aiId: chatOne?.ai?.id,
+        userId: chatOne?.user_id,
+        response,
       });
     } catch (error) {
       console.log(error);
@@ -508,6 +565,18 @@ exports.createMessage = async (input) => {
               { type: "input_text", text: `สรุปจากวิดีโอ: ${removeFirstPrefix(filename)}` },
               { type: "input_text", text: transcript || "(ไม่พบข้อความจากการถอดเสียงวิดีโอ)" },
             ];
+          } if ([".webm"].includes(ext)) {
+            
+            // ดึงไฟล์มาจากที่อยู่ในเครื่อง
+            const filePath_old = path.join(__dirname, "../uploads", filename);
+            const { fileName, mimeType, filePath } = await convertWebmToMp3(filename, filePath_old);
+            //console.log(fileName, mimeType, filePath);
+            
+            const transcript = await transcribeAudio(filePath);
+            return [
+              { type: "input_text", text: `ถอดเสียงจากไฟล์: ${removeFirstPrefix(fileName)}` },
+              { type: "input_text", text: transcript || "(ไม่พบข้อความจากการถอดเสียง)" },
+            ];
           }
 
           // ไม่รองรับ
@@ -568,6 +637,20 @@ exports.createMessage = async (input) => {
     console.log("text", text);
     console.log("response", response);
 
+    // อัพเดทเฉพาะ updatedAt ของ chat
+    // touch updatedAt อย่างเดียว
+    const chatgroupData = await Chatgroup.findByPk(chatOne.chatgroup_id);
+    if (chatgroupData) {
+      await Chatgroup.update(
+        { chatgroup_name: chatgroupData.chatgroup_name },
+        { where: { id: chatOne.chatgroup_id } }
+      );
+    }
+    await Chat.update(
+      { chat_name: chatOne.chat_name },
+      { where: { id: chat_id } }
+    );
+
     // เก็บคำถามลงใน db
     try {
       const sendData = await Message.create({
@@ -599,6 +682,16 @@ exports.createMessage = async (input) => {
         output_token: response.usage.output_tokens,
         total_token: response.usage.total_tokens,
         chat_id: chat_id,
+      });
+    } catch (error) {
+      console.log(error);
+    }
+
+    try {
+      await upsertDailyUserToken({
+        aiId: chatOne?.ai?.id,
+        userId: chatOne?.user_id,
+        response,
       });
     } catch (error) {
       console.log(error);
@@ -957,6 +1050,20 @@ exports.updateMessage = async (id, input) => {
     console.log("text", text);
     console.log("response", response);
 
+    // อัพเดทเฉพาะ updatedAt ของ chat
+    // touch updatedAt อย่างเดียว
+    const chatgroupData = await Chatgroup.findByPk(chatOne.chatgroup_id);
+    if (chatgroupData) {
+      await Chatgroup.update(
+        { chatgroup_name: chatgroupData.chatgroup_name },
+        { where: { id: chatOne.chatgroup_id } }
+      );
+    }
+    await Chat.update(
+      { chat_name: chatOne.chat_name },
+      { where: { id: chat_id } }
+    );
+
     // เก็บคำถามลงใน db
     try {
       const sendData = await Message.create({
@@ -991,6 +1098,16 @@ exports.updateMessage = async (id, input) => {
           (response?.usageMetadata?.toolUsePromptTokenCount ?? 0),
         total_token: response.usageMetadata.totalTokenCount,
         chat_id: chat_id,
+      });
+    } catch (error) {
+      console.log(error);
+    }
+
+    try {
+      await upsertDailyUserToken({
+        aiId: chatOne?.ai?.id,
+        userId: chatOne?.user_id,
+        response,
       });
     } catch (error) {
       console.log(error);
@@ -1066,6 +1183,20 @@ exports.updateMessage = async (id, input) => {
     console.log("text", text);
     console.log("response", response);
 
+    // อัพเดทเฉพาะ updatedAt ของ chat
+    // touch updatedAt อย่างเดียว
+    const chatgroupData = await Chatgroup.findByPk(chatOne.chatgroup_id);
+    if (chatgroupData) {
+      await Chatgroup.update(
+        { chatgroup_name: chatgroupData.chatgroup_name },
+        { where: { id: chatOne.chatgroup_id } }
+      );
+    }
+    await Chat.update(
+      { chat_name: chatOne.chat_name },
+      { where: { id: chat_id } }
+    );
+
     // เก็บคำถามลงใน db
     try {
       await Message.create({
@@ -1091,6 +1222,16 @@ exports.updateMessage = async (id, input) => {
         output_token: response.usage.output_tokens,
         total_token: response.usage.total_tokens,
         chat_id: chat_id,
+      });
+    } catch (error) {
+      console.log(error);
+    }
+
+    try {
+      await upsertDailyUserToken({
+        aiId: chatOne?.ai?.id,
+        userId: chatOne?.user_id,
+        response,
       });
     } catch (error) {
       console.log(error);

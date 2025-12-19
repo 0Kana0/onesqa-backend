@@ -1,0 +1,81 @@
+const moment = require("moment-timezone");
+const db = require("../db/models");
+const { User_token } = db;
+
+const toNumber = (v, fallback = 0) => {
+  const n = Number(v);
+  return Number.isFinite(n) ? n : fallback;
+};
+
+// ✅ รองรับ 2 รูปแบบ
+// 1) response.usageMetadata.*
+// 2) response.usage.{ input_tokens, output_tokens, total_tokens }
+function extractTokenDelta(response) {
+  const usage = response?.usage;
+  if (
+    usage &&
+    (usage.input_tokens != null || usage.output_tokens != null || usage.total_tokens != null)
+  ) {
+    const inputDelta = toNumber(usage.input_tokens, 0);
+    const outputDelta = toNumber(usage.output_tokens, 0);
+    const totalDelta = toNumber(usage.total_tokens, inputDelta + outputDelta);
+    return { inputDelta, outputDelta, totalDelta };
+  }
+
+  const um = response?.usageMetadata;
+  const inputDelta = toNumber(um?.promptTokenCount, 0);
+  const outputDelta = toNumber(
+    (um?.candidatesTokenCount ?? 0) +
+      (um?.thoughtsTokenCount ?? 0) +
+      (um?.toolUsePromptTokenCount ?? 0),
+    0
+  );
+  const totalDelta = toNumber(um?.totalTokenCount, inputDelta + outputDelta);
+
+  return { inputDelta, outputDelta, totalDelta };
+}
+
+async function upsertDailyUserToken({ userId, aiId, response }) {
+  // ✅ วันที่ของวันนี้ตาม Asia/Bangkok (เก็บเป็น DATEONLY ได้เลย)
+  const usedDate = moment.tz("Asia/Bangkok").format("YYYY-MM-DD");
+
+  const { inputDelta, outputDelta, totalDelta } = extractTokenDelta(response);
+
+  return await db.sequelize.transaction(async (t) => {
+    // ✅ ล็อกแถว (กัน create ซ้ำถ้ามี request พร้อมกัน)
+    const row = await User_token.findOne({
+      where: { used_date: usedDate, user_id: userId, ai_id: aiId },
+      transaction: t,
+      lock: t.LOCK.UPDATE,
+    });
+
+    if (!row) {
+      // ไม่มีของวันนี้ -> create
+      return await User_token.create(
+        {
+          used_date: usedDate,
+          input_token: inputDelta,
+          output_token: outputDelta,
+          total_token: totalDelta,
+          user_id: userId,
+          ai_id: aiId,
+        },
+        { transaction: t }
+      );
+    }
+
+    // มีแล้ว -> บวกเพิ่ม (เอาค่าเดิมใน db + ค่าใหม่)
+    await row.increment(
+      {
+        input_token: inputDelta,
+        output_token: outputDelta,
+        total_token: totalDelta,
+      },
+      { transaction: t }
+    );
+
+    return row;
+  });
+}
+
+module.exports = { upsertDailyUserToken };

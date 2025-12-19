@@ -16,7 +16,7 @@ function safeToString(v) {
  * บันทึก Log แบบปลอดภัย ไม่พัง flow หลัก
  * @param {Object} params
  * @param {Object} [params.ctx] - ควรมี ctx.req.user.username
- * @param {String} [params.log_type='ALERT'] - 'PROMPT' | 'ALERT' | 'MODEL' | 'PERSONAL' | 'GROUP'
+ * @param {String} [params.log_type='ALERT'] - 'PROMPT' | 'ALERT' | 'MODEL' | 'PERSONAL' | 'GROUP' | 'ROLE'
  * @param {*} [params.old_data]
  * @param {*} [params.new_data]
  * @param {*} [params.old_status]

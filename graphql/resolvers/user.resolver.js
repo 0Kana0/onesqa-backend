@@ -4,7 +4,7 @@ const { requireAuth } = require('../../utils/authGuard');
 module.exports = {
   Query: {
     users: async (_p, { page, pageSize, where }, ctx) => {
-      //requireAuth(ctx); // ต้องล็อกอินก่อน
+      requireAuth(ctx); // ต้องล็อกอินก่อน
 			return await UserController.listUsers({ page, pageSize, where })
     },
     user: async (_p, { id }, ctx) => {
@@ -21,5 +21,9 @@ module.exports = {
 			//requireAuth(ctx); // ต้องล็อกอินก่อน
 			return await UserController.deleteUser(id);
 		},
+    syncUsersFromApi: async (_parent, {  }, ctx) => {
+      requireAuth(ctx); // ต้องล็อกอินก่อน
+			return await UserController.syncUsersFromApi()
+    },
 	}
 };

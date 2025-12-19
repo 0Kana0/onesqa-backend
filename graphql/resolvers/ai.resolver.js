@@ -5,7 +5,7 @@ const { requireAuth } = require('../../utils/authGuard');
 module.exports = {
   Query: {
     ais: async (_parent, args, ctx) => {
-      //requireAuth(ctx); // ต้องล็อกอินก่อน
+      requireAuth(ctx); // ต้องล็อกอินก่อน
       return await AiController.listAis();
     },
     ai: async (_parent, { id }, ctx) => {

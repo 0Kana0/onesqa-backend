@@ -28,7 +28,7 @@ module.exports = `
   }
 
   extend type Query {
-    messages(chat_id: ID!): [Message!]!
+    messages(chat_id: ID!, user_id: ID): [Message!]!
     message(id: ID!): Message
   }
 

@@ -54,7 +54,11 @@ module.exports = {
         allowNull: false,
         defaultValue: 'LIGHT',
       },
-      loginAt: { type: Sequelize.DATE },
+      loginAt: {
+        type: Sequelize.DATE,
+        allowNull: true,   // ← ต้องเป็น true
+        defaultValue: null,
+      },
       createdAt: {
         allowNull: false,
         type: Sequelize.DATE,

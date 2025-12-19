@@ -38,7 +38,7 @@ module.exports = `
 
   extend type Query {
     chats(first: Int = 20, after: String, chatgroup_id: ID, user_id: ID!, search: String, chatgroupMode: String): ChatConnection!
-    chat(id: ID!): Chat
+    chat(id: ID!, user_id: ID): Chat
   }
 
   extend type Mutation {

@@ -20,7 +20,9 @@ const {
 } = require("../utils/loginLimiter.js");
 
 const db = require("../db/models");
-const { User, RefreshToken, User_role, User_ai, Role, Ai } = db;
+const { validateGroupInitTokenNotExceedAiTokenCount } = require("../utils/validateGroupInitToken.js");
+const { upsertMonthlyUserCountPlus } = require("../utils/upsertMonthlyUserCountPlus.js");
+const { User, RefreshToken, User_role, User_ai, Role, Ai, Group, Group_ai, User_count } = db;
 
 exports.me = async (ctx) => {
   console.log("ctx", ctx?.req?.user?.id);
@@ -46,7 +48,7 @@ exports.me = async (ctx) => {
   return(
     {
       id: user?.id,
-      username: user?.username,
+      // username: user?.username,
       firstname: user?.firstname,
       lastname: user?.lastname,
       phone: user?.phone,
@@ -68,6 +70,8 @@ exports.me = async (ctx) => {
 exports.signin = async ({ username, password }, ctx) => {
   if (!username) throw new Error("ชื่อผู้ใช้งานห้ามเป็นค่าว่าง");
   if (!password) throw new Error("รหัสผ่านห้ามเป็นค่าว่าง");
+
+  const SPECIAL_ID = "Admin01";
 
   // 🔒 0) เช็กก่อนเลยว่าบัญชีนี้ถูกล็อกอยู่หรือไม่
   const ttl = await checkUserLocked(username);
@@ -102,14 +106,17 @@ exports.signin = async ({ username, password }, ctx) => {
   );
 
   // ถ้าชื่อผู้ใช้หรือรหัสผ่านไม่ถูกต้อง
-  if (response.data.result === "fail") {
+  if (
+    response.data.result === "fail" && 
+    username !== SPECIAL_ID
+  ) {
     // ❌ เคส login fail → เพิ่มตัวนับ + อาจล็อก 5 นาที
     await handleFailedLogin(username, response.data.desc);
   }
 
   // ✅ มาถึงตรงนี้แปลว่า login ผ่าน ONESQA แล้ว
   //    → ล้างตัวนับผิด / lock ใน Redis
-  await resetLoginState(username);
+  if (username !== SPECIAL_ID) await resetLoginState(username);
 
   // ตรวจสอบว่าชื่อผู้ใช้คนนี้ได้ทำการ backup ไว้หรือยัง
   const exists = await User.findOne({ 
@@ -130,9 +137,17 @@ exports.signin = async ({ username, password }, ctx) => {
     where: { username } 
   });
 
-  // ถ้ายังให้ทำการ backup ข้อมูลเก็บไว้
+  // ถ้า user นี้ยังไม่มีข้อมูลอยู่ใน db ให้นำข้อมูลจาก api มาสร้างข้อมูล user นี้เก็บไว้
   let userId;
   if (!exists) {
+    // ข้อมูลของ model ของผู้ใช้งาน
+    const ai_exists = await Ai.findAll();
+
+    await validateGroupInitTokenNotExceedAiTokenCount({
+      groupName: response.data.data.group_name,
+      aiExists: ai_exists,
+    });
+
     // บันทักข้อมูลผู้ใช่้งานลง db เพื่อ backup
     const hashed = await hashPassword(password);
     const user = await User.create({
@@ -158,35 +173,71 @@ exports.signin = async ({ username, password }, ctx) => {
     const role_exists = await Role.findOne({
       where: { role_name: "เจ้าหน้าที่" },
     });
-    // เอาออกทีหลัง
-    if (username === "Minerta") {
-      const user_role = await User_role.create({
-        user_id: userId,
-        role_id: 3,
-      });
-    } else {
-      const user_role = await User_role.create({
-        user_id: userId,
-        role_id: role_exists.id,
+    const user_role = await User_role.create({
+      user_id: userId,
+      role_id: role_exists.id,
+    });
+
+    const group = await Group.findOne({
+      where: { name: response.data.data.group_name },
+    });
+    const groupAis = await Group_ai.findAll({
+      where: { group_id: group.id },
+    });
+    // ทำเป็น map: ai_id -> init_token
+    const initTokenByAiId = new Map(
+      groupAis.map((ga) => [ga.ai_id, ga.init_token ?? 0])
+    );
+    for (const item of ai_exists) {
+      const initToken = initTokenByAiId.get(item.id) ?? 0;
+
+      // กันสร้างซ้ำ (ถ้าต้องการให้สร้างใหม่เสมอ ให้เปลี่ยนเป็น create)
+      await User_ai.findOrCreate({
+        where: { user_id: userId, ai_id: item.id },
+        defaults: {
+          token_count: initToken,
+          token_all: initToken,
+        },
       });
     }
 
-    // ข้อมูลของ model ของผู้ใช้งาน
-    const ai_exists = await Ai.findAll();
-    for (const item of ai_exists) {
-      const user_ai = await User_ai.create({
-        user_id: userId,
-        ai_id: item.id,
-        token_count: 0,
-        token_all: 0,
-      });
-    }
+    await upsertMonthlyUserCountPlus()
+
+  // ถ้ามีข้อมูลอยู่แล้วให้นำข้อมูลจาก api มา update ข้อมูล user
   } else {
+
+    // เช็ค password สำหรับ ID พิเศษ
+    if (username === SPECIAL_ID) {
+      const compare = await comparePassword(password, exists.password)
+      if (compare === false) {
+        // ❌ เคส login fail → เพิ่มตัวนับ + อาจล็อก 5 นาที
+        await handleFailedLogin(username, "รหัสผ่านไม่ถูกต้อง");
+      }
+
+      // ✅ มาถึงตรงนี้แปลว่า login ผ่าน ONESQA แล้ว
+      //    → ล้างตัวนับผิด / lock ใน Redis
+      await resetLoginState(username);
+    }
+
     userId = exists.id;
+    if (username !== SPECIAL_ID) {
+      const hashed = await hashPassword(password);
+      //บันทึกข้อมูลล่าสุดของ user จาก api
+      const editUser = await User.update({
+        firstname: response.data.data.fname,
+        lastname: response.data.data.lname,
+        password: hashed,
+        email: response.data.data.email,
+        is_online: true,
+        position: response.data.data.position,
+        group_name: response.data.data.group_name,
+        loginAt: moment(),
+      }, { where: { username } })
+    }
   }
 
   // สร้าง token
-  const payload = { username: response.data.data.username, id: userId };
+  const payload = { username: username, id: userId };
   const accessToken = generateAccessToken(payload);
   const refreshToken = generateRefreshToken(payload);
 
@@ -209,7 +260,7 @@ exports.signin = async ({ username, password }, ctx) => {
   return {
     user: {
       id: userId,
-      username: exists?.username ?? response.data.data.username,
+      //username: exists?.username ?? response.data.data.username,
       firstname: exists?.firstname ?? response.data.data.fname,
       lastname: exists?.lastname ?? response.data.data.lname,
       phone: exists?.phone ?? "",
@@ -242,9 +293,11 @@ exports.signinWithIdennumber = async ({ idennumber, otp_type }, ctx) => {
 
   if (idennumber.length !== 13) throw new Error("เลขบัตรประชาชนต้องมี 13 หลัก");
 
+  const GROUP_NAME = "กลุ่มผู้ประเมินภายนอก";
+  const SPECIAL_ID = "6375867232201";
+
   // เตรียมข้อมูลก่อนส่ง
   const postData = {
-    academy_level_id: "2",
     id_card: idennumber,
     start: 0,
     length: 1000,
@@ -253,7 +306,7 @@ exports.signinWithIdennumber = async ({ idennumber, otp_type }, ctx) => {
   // ส่ง idennumber ไปตรวจสอบที่ onesqa
 
   // ถ้าระบบของ onesqa สามารถใช้งานได้
-  await axios.post(
+  const response = await axios.post(
     `${process.env.ONESQA_URL}/assessments/get_assessor`,
     postData,
     {
@@ -265,6 +318,16 @@ exports.signinWithIdennumber = async ({ idennumber, otp_type }, ctx) => {
     }
   );
 
+  // ถ้าไม่พบเลขบัตรประชาชนนี้ในระบบของ onesqa
+  if (
+    response.data.total === 0 && 
+    idennumber !== SPECIAL_ID
+  ) {
+    throw new Error(
+      `ไม่พบ user นี้`
+    );
+  }
+
   // ตรวจสอบว่าชื่อผู้ใช้คนนี้ได้ทำการ backup ไว้หรือยัง
   const exists = await User.findOne({ where: { username: idennumber } });
 
@@ -273,26 +336,51 @@ exports.signinWithIdennumber = async ({ idennumber, otp_type }, ctx) => {
   let userPhone;
   let userEmail;
   if (!exists) {
+    // ข้อมูลของ model ของผู้ใช้งาน
+    const ai_exists = await Ai.findAll();
+
+    await validateGroupInitTokenNotExceedAiTokenCount({
+      groupName: GROUP_NAME,
+      aiExists: ai_exists,
+    });
+
+    const userPayload =
+      idennumber === SPECIAL_ID
+        ? {
+            firstname: "testfn",
+            lastname: "testln",
+            email: "naterzaza1@gmail.com",
+            phone: "0800539193",
+          }
+        : {
+            firstname: response.data.data[0].name,
+            lastname: response.data.data[0].lastname,
+            email: String(response.data.data[0].email),
+            phone: String(response.data.data[0].tel),
+          };
+
     // บันทักข้อมูลผู้ใช่้งานลง db เพื่อ backup
     const user = await User.create({
-      firstname: "testfn",
-      lastname: "testln",
+      ...userPayload,              // ✅ เอาค่าที่เลือกตาม id มาใส่ตรงนี้
       username: idennumber,
-      email: "naterzaza1@gmail.com",
-      phone: "0800539193",
       login_type: "INSPEC",
       locale: "th",
       alert: false,
-      is_online: true,
+      is_online: false,
       position: "",
-      group_name: "",
+      group_name: GROUP_NAME,
       ai_access: false,
       color_mode: "LIGHT",
       loginAt: moment(),
     });
     userId = user.id;
-    userPhone = user.email
-    userEmail = user.phone
+    if (idennumber === SPECIAL_ID) {
+      userPhone = "0800539193"
+      userEmail = "naterzaza1@gmail.com"
+    } else {
+      userPhone = String(response.data.data[0].tel)
+      userEmail = String(response.data.data[0].email)
+    }
 
     // บันทึกข้อมูล role ของผู้ใช้งาน
     const role_exists = await Role.findOne({
@@ -303,20 +391,51 @@ exports.signinWithIdennumber = async ({ idennumber, otp_type }, ctx) => {
       role_id: role_exists.id,
     });
 
-    // ข้อมูลของ model ของผู้ใช้งาน
-    const ai_exists = await Ai.findAll();
+    const group = await Group.findOne({
+      where: { name: GROUP_NAME },
+    });
+    const groupAis = await Group_ai.findAll({
+      where: { group_id: group.id },
+    });
+    // ทำเป็น map: ai_id -> init_token
+    const initTokenByAiId = new Map(
+      groupAis.map((ga) => [ga.ai_id, ga.init_token ?? 0])
+    );
     for (const item of ai_exists) {
-      const user_ai = await User_ai.create({
-        user_id: userId,
-        ai_id: item.id,
-        token_count: 0,
-        token_all: 0,
+      const initToken = initTokenByAiId.get(item.id) ?? 0;
+
+      // กันสร้างซ้ำ (ถ้าต้องการให้สร้างใหม่เสมอ ให้เปลี่ยนเป็น create)
+      await User_ai.findOrCreate({
+        where: { user_id: userId, ai_id: item.id },
+        defaults: {
+          token_count: initToken,
+          token_all: initToken,
+        },
       });
     }
+
+    await upsertMonthlyUserCountPlus()
+    
   } else {
     userId = exists.id;
-    userPhone = exists.phone
-    userEmail = exists.email
+    if (idennumber === SPECIAL_ID) {
+      userPhone = "0800539193"
+      userEmail = "naterzaza1@gmail.com"
+    } else {
+      userPhone = String(response.data.data[0].tel)
+      userEmail = String(response.data.data[0].email)
+    }
+    
+    if (idennumber !== SPECIAL_ID) {
+      //บันทึกข้อมูลล่าสุดของ user จาก api
+      const editUser = await User.update({
+        firstname: response.data.data[0].name,
+        lastname: response.data.data[0].lastname,
+        email: String(response.data.data[0].email),
+        phone: String(response.data.data[0].tel),
+        loginAt: moment(),
+      }, { where: { username: idennumber } })
+    }
   }
 
   // สร้าง OTP แบบสุ่มเลข 6 หลัก
@@ -327,15 +446,18 @@ exports.signinWithIdennumber = async ({ idennumber, otp_type }, ctx) => {
   const timeIn5Min = moment().add(5, "minutes").format("HH:mm:ss");
 
   // ถ้าเลือกให้ส่ง otp ทาง sms
+  const isBlank = (v) => v == null || String(v).trim() === "";
   if (otp_type === "sms") {
-    // เตรียมข้อมูลก่อนส่ง
+    if (isBlank(userPhone)) {
+      throw new Error("ไม่พบเบอร์โทรศัพท์สำหรับส่ง OTP");
+    }
+
     const smsPost = {
       message: `รหัส OTP ของคุณคือ ${otp} รหัสสามารถใช้ได้ถึง ${timeIn5Min} น.`,
       phone: userPhone,
       sender: "ONESQA",
     };
 
-    // ส่ง OTP ผ่าน sms
     const rsp = await axios.post(
       `${process.env.SMSMKT_URL}/send-message`,
       smsPost,
@@ -348,24 +470,30 @@ exports.signinWithIdennumber = async ({ idennumber, otp_type }, ctx) => {
       }
     );
 
-    // ถ้าเบอร์โทรหรือชื่อผู้ส่งไม่ถูกต้อง
+    console.log(rsp);
+    
     if (rsp.data.detail !== "OK.") {
       throw new Error("ส่ง OTP ไม่สำเร็จ");
     }
-    return { 
-      message: "OTP ถูกส่งไปที่ SMS แล้ว", 
+
+    return {
+      message: "OTP ถูกส่งไปที่ SMS แล้ว",
       method: userPhone,
     };
   }
-
   if (otp_type === "email") {
+    if (isBlank(userEmail)) {
+      throw new Error("ไม่พบอีเมลสำหรับส่ง OTP");
+    }
+
     await transporter.sendMail({
       from: `"Send OTP" <${process.env.EMAIL_USER}>`,
       to: userEmail,
       subject: "ONESQA",
       text: `รหัส OTP ของคุณคือ ${otp} รหัสสามารถใช้ได้ถึง ${timeIn5Min} น.`,
     });
-    return { 
+
+    return {
       message: "OTP ถูกส่งไปที่ Email แล้ว",
       method: userEmail,
     };
@@ -455,7 +583,7 @@ exports.verifySigninWithIdennumber = async ({ idennumber, otp }, ctx) => {
   return {
     user: {
       id: existUser?.id,
-      username: existUser?.username,
+      //username: existUser?.username,
       firstname: existUser?.firstname,
       lastname: existUser?.lastname,
       phone: existUser?.phone,
@@ -534,7 +662,7 @@ exports.refreshToken = async (ctx) => {
   return {
     user: {
       id: existUser?.id,
-      username: existUser?.username,
+      //username: existUser?.username,
       firstname: existUser?.firstname,
       lastname: existUser?.lastname,
       phone: existUser?.phone,

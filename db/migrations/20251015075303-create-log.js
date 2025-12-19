@@ -7,7 +7,7 @@ module.exports = {
       DO $$
       BEGIN
         IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'enum_log_type') THEN
-          CREATE TYPE "enum_log_type" AS ENUM ('PROMPT', 'ALERT', 'MODEL', 'PERSONAL', 'GROUP');
+          CREATE TYPE "enum_log_type" AS ENUM ('PROMPT', 'ALERT', 'MODEL', 'PERSONAL', 'GROUP', 'ROLE');
         END IF;
       END$$;
     `);
@@ -23,7 +23,7 @@ module.exports = {
         type: Sequelize.STRING
       },
       log_type: {
-        type: Sequelize.ENUM('PROMPT', 'ALERT', 'MODEL', 'PERSONAL', 'GROUP'),
+        type: Sequelize.ENUM('PROMPT', 'ALERT', 'MODEL', 'PERSONAL', 'GROUP', 'ROLE'),
         allowNull: false
       },
       old_data: {

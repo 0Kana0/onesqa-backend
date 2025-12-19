@@ -13,7 +13,7 @@ module.exports = {
 
   Mutation: {
     createNotification: async (_parent, { input }, ctx) => {
-      //requireAuth(ctx); // ต้องล็อกอินก่อน
+      requireAuth(ctx); // ต้องล็อกอินก่อน
       return await NotificationController.createNotification(input);
     },
   },

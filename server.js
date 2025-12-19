@@ -20,6 +20,7 @@ const cookieParser = require("cookie-parser");
 const cors = require("cors");
 // server.js (ส่วนสำคัญ)
 const verifyToken = require("./middleware/auth-middleware");
+const { startDailyJobs } = require("./cron/dailyJob");
 
 const PORT = Number(process.env.PORT || 4000);
 const URL = process.env.URL || "http://localhost";
@@ -128,6 +129,9 @@ async function start() {
 
   // Static middleware สำหรับให้บริการไฟล์สาธารณะ
   app.use("/uploads", express.static(path.join(__dirname, "uploads")));
+
+  // เริ่ม cronjob
+  startDailyJobs();
 
   // ✅ WebSocket Server สำหรับ GraphQL Subscriptions
   const wsServer = new WebSocketServer({

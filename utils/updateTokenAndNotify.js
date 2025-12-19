@@ -103,7 +103,9 @@ async function updateTokenAndNotify({
         {
           model: User_role,
           as: "user_role",
-          where: { role_id: 3 },
+          where: { 
+            role_id: { [Op.in]: [3, 4] }   // role_id = 3 หรือ 4
+          },
           attributes: [],
         },
       ],

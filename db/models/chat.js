@@ -13,7 +13,9 @@ module.exports = (sequelize, DataTypes) => {
       // define association here
       Chat.belongsTo(models.Chatgroup, { 
         foreignKey: 'chatgroup_id', 
-        as: 'chatgroup' 
+        as: 'chatgroup',
+        onDelete: 'SET NULL',   // ✅ เวลา user ถูกลบ user_id = null
+        hooks: true,
       });
       Chat.belongsTo(models.User, { 
         foreignKey: 'user_id', 
