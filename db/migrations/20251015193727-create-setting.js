@@ -9,10 +9,16 @@ module.exports = {
         primaryKey: true,
         type: Sequelize.INTEGER
       },
-      setting_name: {
+      setting_name_th: {
         type: Sequelize.STRING
       },
-      setting_detail: {
+      setting_name_en: {
+        type: Sequelize.STRING
+      },
+      setting_detail_th: {
+        type: Sequelize.STRING
+      },
+      setting_detail_en: {
         type: Sequelize.STRING
       },
       activity: {

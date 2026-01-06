@@ -13,7 +13,7 @@ module.exports = {
     multipleUpload: async (_, { files, ai_id, user_id }, ctx) => {
       requireAuth(ctx); // ต้องล็อกอินก่อน
       return await Promise.all(
-        files.map(file => FileController.saveUpload(file, ai_id, user_id))
+        files.map(file => FileController.saveUpload(file, ai_id, user_id, ctx))
       );
     }
   },

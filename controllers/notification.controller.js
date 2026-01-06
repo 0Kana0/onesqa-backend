@@ -5,11 +5,14 @@ const { Notification } = db;
 const pubsub = require("../utils/pubsub"); // ✅ ใช้ instance เดียว
 const { encodeCursor, decodeCursor } = require('../utils/cursor');
 
-exports.myNotifications = async (user_id, { first = 20, after } = {}) => {
+exports.myNotifications = async (locale, user_id, { first = 20, after } = {}) => {
   const safeFirst = Math.max(1, parseInt(first, 10) || 20);
   const limit = safeFirst + 1; // +1 เพื่อเช็ค hasNextPage
 
   const where = { user_id };
+
+  // ✅ เพิ่ม locale เข้าเงื่อนไข
+  if (locale) where.locale = locale; // ถ้าคอลัมน์ชื่ออื่น (เช่น lang) เปลี่ยนตรงนี้
 
   if (after) {
     const { createdAt, id } = decodeCursor(after);
@@ -25,8 +28,8 @@ exports.myNotifications = async (user_id, { first = 20, after } = {}) => {
   const rows = await Notification.findAll({
     where,
     order: [
-      ['createdAt', 'DESC'],
-      ['id', 'DESC'],
+      ["createdAt", "DESC"],
+      ["id", "DESC"],
     ],
     limit,
   });

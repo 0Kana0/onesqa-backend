@@ -31,7 +31,8 @@ module.exports = `
     group_name: String!
     ai_access: Boolean!
     color_mode: ColorMode!
-    role_name: String!
+    role_name_th: String!
+    role_name_en: String!
   }
 
   type AuthPayload {
@@ -47,16 +48,19 @@ module.exports = `
   input SigninInput {
     username: String!
     password: String!
+    locale: localeMode!
   }
 
   input SigninWithIdInput {
     idennumber: String!
     otp_type: OtpType!     # "sms" | "email"
+    locale: localeMode!
   }
 
   input VerifySigninWithIdInput {
     idennumber: String!
     otp: String!
+    locale: localeMode!
   }
 
   extend type Query {

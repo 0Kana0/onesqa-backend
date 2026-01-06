@@ -1,6 +1,7 @@
 // utils/checkTokenQuota.js
 const db = require("../db/models"); // หรือ '../../db/models' ถ้าโปรเจกต์คุณใช้ path นั้น
 const { User_ai, Ai, User } = db;
+const { getLocale, getCurrentUser } = require("../utils/currentUser");
 
 const DEFAULT_MIN_PERCENT = 15;
 
@@ -24,14 +25,21 @@ function calcPercent(count, total) {
  * @param {number} [params.minPercent=15]
  * @returns {Promise<{ all_percent: number, user_percent: number }>}
  */
-async function checkTokenQuota({ aiId, userId, minPercent = DEFAULT_MIN_PERCENT }) {
+async function checkTokenQuota({ aiId, userId, minPercent = DEFAULT_MIN_PERCENT, ctx }) {
+
+  const locale = await getLocale(ctx);
+
   // ---- เช็คว่า user ได้รับอนุญาติให้ใช้งาน model ใหม ----
   const checkStatusUser = await User.findOne({
     attributes: ["ai_access"],
     where: { id: userId }
   })
   if (checkStatusUser.ai_access === false) {
-    throw new Error("User นี้ถูกปิดการใช้งาน Ai");
+    throw new Error(
+      locale === "th"
+        ? "User นี้ถูกปิดการใช้งาน AI"
+        : "This user has AI disabled"
+    );
   }
 
   // ---- เช็คว่า token เปิดใช้งานอยู่ใหม ----
@@ -40,7 +48,11 @@ async function checkTokenQuota({ aiId, userId, minPercent = DEFAULT_MIN_PERCENT 
     where: { id: aiId }
   })
   if (checkStatusModel.activity === false) {
-    throw new Error("Model นี้ปิดการใช้งานอยู่");
+    throw new Error(
+      locale === "th"
+        ? "Model นี้ปิดการใช้งานอยู่"
+        : "This model is disabled"
+    );
   }
 
   // ---- เช็ค token ของ user ----
@@ -52,7 +64,11 @@ async function checkTokenQuota({ aiId, userId, minPercent = DEFAULT_MIN_PERCENT 
     },
   });
   if (!checkUserToken) {
-    throw new Error("ไม่พบข้อมูล Token ของผู้ใช้สำหรับ AI นี้");
+    throw new Error(
+      locale === "th"
+        ? "ไม่พบข้อมูล Token ของผู้ใช้สำหรับ AI นี้"
+        : "User token data for this AI was not found"
+    );
   }
   const user_percent = calcPercent(
     checkUserToken.token_count,
@@ -60,7 +76,11 @@ async function checkTokenQuota({ aiId, userId, minPercent = DEFAULT_MIN_PERCENT 
   );
   console.log("user_percent", user_percent);
   if (user_percent < minPercent) {
-    throw new Error("Token ของผู้ใช้น้อยเกินไปไม่สามารถเเชทได้");
+    throw new Error(
+      locale === "th"
+        ? "Token ของผู้ใช้น้อยเกินไป ไม่สามารถแชตได้"
+        : "User has insufficient tokens to chat"
+    );
   }
 
   // ถ้าผ่านทั้งสองเงื่อนไข return ค่าไว้เผื่อ debug / ใช้ต่อ

@@ -50,9 +50,23 @@ exports.getMessageById = async (id) => {
   return await Message.findByPk(id);
 };
 
-exports.createMessage = async (input) => {
-  const { chat_id, message, fileMessageList } = input;
-  console.log(chat_id, message, fileMessageList);
+exports.createMessage = async (input, ctx) => {
+  const { chat_id, message, fileMessageList, locale } = input;
+  console.log(chat_id, message, fileMessageList, locale);
+
+  // เวลาปัจจุบันของประเทศไทย
+  const nowTH = new Date().toLocaleString(
+    locale === "th" ? "th-TH" : "en-US",
+    {
+      timeZone: "Asia/Bangkok",
+      year: "numeric",
+      month: "long",
+      day: "numeric",
+      hour: "2-digit",
+      minute: "2-digit",
+      second: "2-digit",
+    }
+  );
 
   // เรียกดูข้อมูลของ chat เพื่อดูว่าใช้ model อันไหน
   const chatOne = await Chat.findByPk(chat_id, {
@@ -80,6 +94,7 @@ exports.createMessage = async (input) => {
     aiId: chatOne?.ai?.id,
     userId: chatOne?.user_id,
     // minPercent: 15, // ไม่ส่งก็ได้ ใช้ค่า default
+    ctx
   });
 
   // นำชื่อไฟล์ที่อัพโหลดเก็บเข้าไปใน array
@@ -322,11 +337,27 @@ exports.createMessage = async (input) => {
     }
 
     // สร้าง array สำหรับเก็บ prompt ที่ผ่านมาโดยมี prompt ตั้งต้น
+    // locale: "th" | "en"
+    // ข้อความตามภาษา
+    const systemPrompt =
+      locale === "th"
+        ? `คุณคือผู้ช่วยส่วนตัว วันที่และเวลาปัจจุบันของประเทศไทยคือ ${nowTH}`
+        : `You are a personal assistant. The current date and time in Thailand is ${nowTH}`;
+
+    const modelReply =
+      locale === "th"
+        ? "รับทราบครับ ผมจะทำหน้าที่เป็นผู้ช่วยของคุณ"
+        : "Acknowledged. I will act as your personal assistant.";
+
+    // history สำหรับส่งเข้า gemini
     const historyList = [
-      { role: "user", parts: [{ text: "คุณคือผู้ช่วยส่วนตัว" }] },
+      {
+        role: "user",
+        parts: [{ text: systemPrompt }],
+      },
       {
         role: "model",
-        parts: [{ text: "รับทราบครับ ผมจะทำหน้าที่เป็นผู้ช่วยของคุณ" }],
+        parts: [{ text: modelReply }],
       },
     ];
 
@@ -435,6 +466,7 @@ exports.createMessage = async (input) => {
     try {
       // อัปเดต token + เช็ค % แล้วส่งแจ้งเตือน
       await updateTokenAndNotify({
+        ctx,
         chatOne,
         usedTokens,
         // thresholdPercent: 15, // ไม่ส่งก็ได้ ใช้ default 15
@@ -589,12 +621,26 @@ exports.createMessage = async (input) => {
     }
 
     // สร้าง array สำหรับเก็บ prompt ที่ผ่านมาโดยมี prompt ตั้งต้น
+    // locale: "th" | "en"
+    // system prompt ตามภาษา
+    const systemText =
+      locale === "th"
+        ? `คุณคือผู้ช่วยส่วนตัว วันที่และเวลาปัจจุบันของประเทศไทยคือ ${nowTH}`
+        : `You are a personal assistant. The current date and time in Thailand is ${nowTH}`;
+
+    // history สำหรับ gpt API
     const historyList = [
       {
         role: "system",
-        content: [{ type: "input_text", text: "You are a helpful assistant." }],
+        content: [
+          {
+            type: "input_text",
+            text: systemText,
+          },
+        ],
       },
     ];
+
     // เก็บ prompt ที่ผ่านมาทั้งหมดใน array
     for (const message of messageAllByChatId) {
       const file_history = message?.files.map(x => x?.file_name).filter(Boolean);      
@@ -704,6 +750,7 @@ exports.createMessage = async (input) => {
     try {
       // อัปเดต token + เช็ค % แล้วส่งแจ้งเตือน
       await updateTokenAndNotify({
+        ctx,
         chatOne,
         usedTokens,
         // thresholdPercent: 15, // ไม่ส่งก็ได้ ใช้ default 15
@@ -721,9 +768,23 @@ exports.createMessage = async (input) => {
   //return await Message.create(input);
 };
 
-exports.updateMessage = async (id, input) => {
-  const { chat_id, message, fileMessageList } = input;
-  console.log(chat_id, message, fileMessageList);
+exports.updateMessage = async (id, input, ctx) => {
+  const { chat_id, message, fileMessageList, locale } = input;
+  console.log(chat_id, message, fileMessageList, locale);
+
+  // เวลาปัจจุบันของประเทศไทย
+  const nowTH = new Date().toLocaleString(
+    locale === "th" ? "th-TH" : "en-US",
+    {
+      timeZone: "Asia/Bangkok",
+      year: "numeric",
+      month: "long",
+      day: "numeric",
+      hour: "2-digit",
+      minute: "2-digit",
+      second: "2-digit",
+    }
+  );
 
   // เรียกดูข้อมูลของ chat เพื่อดูว่าใช้ model อันไหน
   const chatOne = await Chat.findByPk(chat_id, {
@@ -751,6 +812,7 @@ exports.updateMessage = async (id, input) => {
     aiId: chatOne?.ai?.id,
     userId: chatOne?.user_id,
     // minPercent: 15, // ไม่ส่งก็ได้ ใช้ค่า default
+    ctx
   });
 
   // ปรับให้ message_id ของ file ของ message ที่ต้องเเก้ไขเป็น null ป้องกันการถูกลบ
@@ -1007,11 +1069,27 @@ exports.updateMessage = async (id, input) => {
     }
 
     // สร้าง array สำหรับเก็บ prompt ที่ผ่านมาโดยมี prompt ตั้งต้น
+    // locale: "th" | "en"
+    // ข้อความตามภาษา
+    const systemPrompt =
+      locale === "th"
+        ? `คุณคือผู้ช่วยส่วนตัว วันที่และเวลาปัจจุบันของประเทศไทยคือ ${nowTH}`
+        : `You are a personal assistant. The current date and time in Thailand is ${nowTH}`;
+
+    const modelReply =
+      locale === "th"
+        ? "รับทราบครับ ผมจะทำหน้าที่เป็นผู้ช่วยของคุณ"
+        : "Acknowledged. I will act as your personal assistant.";
+
+    // history สำหรับส่งเข้า gemini
     const historyList = [
-      { role: "user", parts: [{ text: "คุณคือผู้ช่วยส่วนตัว" }] },
+      {
+        role: "user",
+        parts: [{ text: systemPrompt }],
+      },
       {
         role: "model",
-        parts: [{ text: "รับทราบครับ ผมจะทำหน้าที่เป็นผู้ช่วยของคุณ" }],
+        parts: [{ text: modelReply }],
       },
     ];
 
@@ -1120,6 +1198,7 @@ exports.updateMessage = async (id, input) => {
     try {
       // อัปเดต token + เช็ค % แล้วส่งแจ้งเตือน
       await updateTokenAndNotify({
+        ctx,
         chatOne,
         usedTokens,
         // thresholdPercent: 15, // ไม่ส่งก็ได้ ใช้ default 15
@@ -1136,13 +1215,28 @@ exports.updateMessage = async (id, input) => {
 
     // ถ้าใช้ openai
   } else if (chatOne.ai.model_type === "gpt") {
+
     // สร้าง array สำหรับเก็บ prompt ที่ผ่านมาโดยมี prompt ตั้งต้น
+    // locale: "th" | "en"
+    // system prompt ตามภาษา
+    const systemText =
+      locale === "th"
+        ? `คุณคือผู้ช่วยส่วนตัว วันที่และเวลาปัจจุบันของประเทศไทยคือ ${nowTH}`
+        : `You are a personal assistant. The current date and time in Thailand is ${nowTH}`;
+
+    // history สำหรับ gpt API
     const historyList = [
       {
         role: "system",
-        content: [{ type: "input_text", text: "You are a helpful assistant." }],
+        content: [
+          {
+            type: "input_text",
+            text: systemText,
+          },
+        ],
       },
     ];
+    
     // เก็บ prompt ที่ผ่านมาทั้งหมดใน array
     for (const message of messageAllByChatId) {
       //const fileParts = await processFiles(chat.file);
@@ -1244,6 +1338,7 @@ exports.updateMessage = async (id, input) => {
     try {
       // อัปเดต token + เช็ค % แล้วส่งแจ้งเตือน
       await updateTokenAndNotify({
+        ctx,
         chatOne,
         usedTokens,
         // thresholdPercent: 15, // ไม่ส่งก็ได้ ใช้ default 15

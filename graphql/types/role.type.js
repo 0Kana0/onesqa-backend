@@ -3,13 +3,15 @@ module.exports = `
 
   type Role {
     id: ID!
-    role_name: String!
+    role_name_th: String!
+    role_name_en: String!
     createdAt: DateTime!
     updatedAt: DateTime!
   }
 
   input RoleInput {
-    role_name: String!
+    role_name_th: String!
+    role_name_en: String!
   }
 
   extend type Query {

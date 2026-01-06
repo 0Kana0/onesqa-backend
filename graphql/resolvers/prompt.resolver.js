@@ -4,9 +4,9 @@ const { requireAuth } = require('../../utils/authGuard');
 
 module.exports = {
   Query: {
-    prompts: async (_parent, args, ctx) => {
+    prompts: async (_parent, { locale }, ctx) => {
       requireAuth(ctx); // ต้องล็อกอินก่อน
-      return await PromptController.listPrompts();
+      return await PromptController.listPrompts(locale);
     },
     prompt: async (_parent, { id }, ctx) => {
       requireAuth(ctx); // ต้องล็อกอินก่อน

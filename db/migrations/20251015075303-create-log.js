@@ -9,6 +9,9 @@ module.exports = {
         IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'enum_log_type') THEN
           CREATE TYPE "enum_log_type" AS ENUM ('PROMPT', 'ALERT', 'MODEL', 'PERSONAL', 'GROUP', 'ROLE');
         END IF;
+        IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'enum_log_locale_type') THEN
+          CREATE TYPE "enum_log_locale_type" AS ENUM ('th', 'en');
+        END IF;
       END$$;
     `);
 
@@ -37,6 +40,12 @@ module.exports = {
       },
       new_status: {
         type: Sequelize.BOOLEAN
+      },
+      locale: {
+        // อ้าง enum ที่สร้างไว้ด้วยชื่อ type โดยตรง
+        type: 'enum_log_locale_type',
+        allowNull: false,
+        defaultValue: 'th',
       },
       createdAt: {
         allowNull: false,

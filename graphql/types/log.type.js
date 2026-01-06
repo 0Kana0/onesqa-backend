@@ -1,6 +1,11 @@
 module.exports = `
   scalar DateTime     # 👈 เพิ่มตรงนี้
 
+  enum localeMode {
+    th
+    en
+  }
+
   enum LogType {
     PROMPT
     ALERT 
@@ -18,6 +23,7 @@ module.exports = `
     new_data: String!
     old_status: Boolean
     new_status: Boolean
+    locale: localeMode
     createdAt: DateTime!
     updatedAt: DateTime!
   }
@@ -41,11 +47,12 @@ module.exports = `
     new_data: String!
     old_status: Boolean
     new_status: Boolean
+    locale: localeMode
   }
 
   extend type Query {
     # ใช้งานจริงแนะนำตัวนี้
-    logs(page: Int, pageSize: Int, where: LogFilterInput): LogPage!
+    logs(locale: localeMode, page: Int, pageSize: Int, where: LogFilterInput): LogPage!
     log(id: ID!): Log
   }
 

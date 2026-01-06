@@ -18,7 +18,7 @@ async function checkUserLocked(username) {
 }
 
 // จัดการตอนใส่รหัสผิด
-async function handleFailedLogin(username, descMessage) {
+async function handleFailedLogin(username, descMessage, locale) {
   const failKey = loginFailKey(username);
   const lockKey = loginLockKey(username);
 
@@ -37,13 +37,17 @@ async function handleFailedLogin(username, descMessage) {
 
     // ใส่จำนวนครั้งลงใน message ด้วย
     throw new Error(
-      `บัญชีนี้ถูกล็อกชั่วคราว กรุณารอสักครู่เพื่อเข้าสู่ระบบอีกครั้ง 05:00 นาที`
+      locale === "th"
+        ? `บัญชีนี้ถูกล็อกชั่วคราว กรุณารอสักครู่เพื่อเข้าสู่ระบบอีกครั้ง 05:00 นาที`
+        : `This account is temporarily locked. Please wait and try logging in again in 05:00 minutes.`
     );
   }
 
   // ❌ ยังไม่ถึง limit → เอา message เดิม + จำนวนครั้ง
   throw new Error(
-    `${baseMessage} (ครั้งที่ ${fails}/${MAX_FAILED_ATTEMPTS})`
+    locale === "th"
+      ? `${baseMessage} (ครั้งที่ ${fails}/${MAX_FAILED_ATTEMPTS})`
+      : `${baseMessage} (Attempt ${fails}/${MAX_FAILED_ATTEMPTS})`
   );
 }
 

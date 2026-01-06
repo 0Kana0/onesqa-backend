@@ -5,6 +5,7 @@ const { Chat, Ai, Message, File } = db;
 const { encodeCursor, decodeCursor } = require("../utils/cursor");
 const { deleteMultipleFiles } = require("../utils/fileUtils");
 const { checkTokenQuota } = require("../utils/checkTokenQuota");
+const { getLocale, getCurrentUser } = require("../utils/currentUser");
 
 exports.listChats = async (
   chatgroup_id = null,
@@ -102,22 +103,26 @@ exports.getChatById = async (id, user_id) => {
   });
 };
 
-exports.createChat = async (input) => {
+exports.createChat = async (input, ctx) => {
   const { ai_id, user_id } = input;
   // ห้ามส่งคำถามถ้าเหลือ token ของ user ทั้งหมดเหลือไม่ถึง 15%
   await checkTokenQuota({
     aiId: ai_id,
     userId: user_id,
     // minPercent: 15, // ไม่ส่งก็ได้ ใช้ค่า default
+    ctx
   });
   
   // validation อื่น ๆ เช่น ชื่อห้ามซ้ำ:
   return await Chat.create(input);
 };
 
-exports.updateChat = async (id, input) => {
+exports.updateChat = async (id, input, ctx) => {
+
+  const locale = await getLocale(ctx);
+
   const row = await Chat.findByPk(id);
-  if (!row) throw new Error("Chat not found");
+  if (!row) throw new Error(locale === "th" ? "ไม่พบแชต" : "Chat not found");
 
   await row.update(input);
   return row;

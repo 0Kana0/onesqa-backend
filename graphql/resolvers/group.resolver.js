@@ -12,6 +12,10 @@ module.exports = {
       requireAuth(ctx); // ต้องล็อกอินก่อน
       return await GroupController.getGroupById(id);
     },
+    groupByName: async (_parent, { name }, ctx) => {
+      requireAuth(ctx); // ต้องล็อกอินก่อน
+      return await GroupController.getGroupByName(name);
+    },
   },
   Mutation: {
     updateGroup: async (_parent, { id, input }, ctx) => {

@@ -24,6 +24,7 @@ module.exports = `
   input MessageInput {
     chat_id: ID
     message: String
+    locale: String
     fileMessageList: [FileDataInput]
   }
 

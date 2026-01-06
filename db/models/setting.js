@@ -14,8 +14,10 @@ module.exports = (sequelize, DataTypes) => {
     }
   }
   Setting.init({
-    setting_name: DataTypes.STRING,
-    setting_detail: DataTypes.STRING,
+    setting_name_th: DataTypes.STRING,
+    setting_name_en: DataTypes.STRING,
+    setting_detail_th: DataTypes.STRING,
+    setting_detail_en: DataTypes.STRING,
     activity: DataTypes.BOOLEAN
   }, {
     sequelize,

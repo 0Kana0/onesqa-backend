@@ -1,34 +1,58 @@
 const { Op } = require('sequelize');
 const db = require('../db/models'); // หรือ '../../db/models' ถ้าโปรเจกต์คุณใช้ path นั้น
 const { Log } = db;
+const { getLocale, getCurrentUser } = require("../utils/currentUser");
 
-exports.listLogs = async ({ page, pageSize, where = {} }) => {
+exports.listLogs = async ({ locale, page, pageSize, where = {} }) => {
   const limit = Math.max(parseInt(pageSize, 10) || 5, 1);
   const p = Math.max(Number(page) || 1, 1);
   const offset = (p - 1) * limit;
 
-  const { logType, startDate, endDate } = where || {};
+  const {
+    logType,
+    startDate,
+    endDate,
+    locale: whereLocale, // ✅ เพิ่ม locale ใน where
+  } = where || {};
 
   const whereClause = {};
+
+  // ✅ locale: ให้ where.locale มาก่อน ถ้าไม่ส่งมาใช้ locale param
+  const localeToUse = whereLocale ?? locale;
+  if (localeToUse) whereClause.locale = localeToUse; // <- ถ้าคอลัมน์ชื่ออื่น เปลี่ยนตรงนี้
+
   if (logType) whereClause.log_type = logType;
+
+  const isDateOnly = (s) => typeof s === "string" && /^\d{4}-\d{2}-\d{2}$/.test(s);
 
   if (startDate || endDate) {
     const createdAt = {};
-    if (startDate) createdAt[Op.gte] = new Date(startDate);
-    if (endDate) {
-      // ถ้าส่งมาเป็นวันที่อย่างเดียว แปลงให้เป็น end-of-day เพื่อ inclusive
-      const end = new Date(endDate);
-      if (end.getHours() === 0 && end.getMinutes() === 0 && end.getSeconds() === 0 && end.getMilliseconds() === 0) {
-        end.setHours(23, 59, 59, 999);
-      }
-      createdAt[Op.lte] = end;
+
+    if (startDate) {
+      // ถ้าเป็น date-only ให้เริ่มที่ 00:00 ของวันนั้น
+      createdAt[Op.gte] = isDateOnly(startDate)
+        ? new Date(`${startDate}T00:00:00.000`)
+        : new Date(startDate);
     }
+
+    if (endDate) {
+      if (isDateOnly(endDate)) {
+        // ✅ ครอบคลุมทั้งวัน endDate โดยใช้ < วันถัดไป 00:00
+        const nextDay = new Date(`${endDate}T00:00:00.000`);
+        nextDay.setDate(nextDay.getDate() + 1);
+        createdAt[Op.lt] = nextDay;
+      } else {
+        // ถ้ามีเวลาแนบมาแล้ว ใช้ lte ตามนั้น
+        createdAt[Op.lte] = new Date(endDate);
+      }
+    }
+
     whereClause.createdAt = createdAt;
   }
 
   const order = [
-    ['createdAt', 'DESC'],
-    ['id', 'DESC'],
+    ["createdAt", "DESC"],
+    ["id", "DESC"],
   ];
 
   const { rows, count } = await Log.findAndCountAll({
@@ -55,9 +79,12 @@ exports.createLog = async (input) => {
   return await Log.create(input);
 }
 
-exports.updateLog = async (id, input) => {
+exports.updateLog = async (id, input, ctx) => {
+  
+  const locale = await getLocale(ctx);
+  
   const row = await Log.findByPk(id);
-  if (!row) throw new Error('Log not found');
+  if (!row) throw new Error(locale === "th" ? "ไม่พบข้อมูล Log" : "Log not found");
 
   await row.update(input);
   return row;

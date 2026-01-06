@@ -6,7 +6,7 @@ const moment = require("moment-timezone");
 const { Op } = require("sequelize");
 
 const db = require("../db/models");
-const { Group, Group_ai, Ai, User_count } = db;
+const { Group, Group_ai, Ai, User_count, Notification, RefreshToken } = db;
 
 const TZ = "Asia/Bangkok";
 
@@ -87,7 +87,6 @@ async function syncGroupsFromApi() {
     }
   }
 }
-
 /**
  * sync group_ai จาก ai table
  */
@@ -185,6 +184,57 @@ async function monthlyUserCount() {
 }
 
 /**
+ * 🧹 ลบ Notification ที่เกิน 6 เดือน
+ */
+const cleanupOldNotifications = async () => {
+  try {
+    const now = moment().tz(TZ);
+
+    // วันที่ย้อนหลัง 6 เดือน
+    const sixMonthsAgo = now.clone().subtract(6, "months").toDate();
+
+    const deletedCount = await Notification.destroy({
+      where: {
+        createdAt: {
+          [require("sequelize").Op.lt]: sixMonthsAgo,
+        },
+      },
+    });
+
+    console.log(
+      `[CRON][Notification] ${now.format("YYYY-MM-DD HH:mm:ss")} ลบข้อมูลแล้ว ${deletedCount} รายการ`
+    );
+  } catch (error) {
+    console.error("[CRON][Notification] Error:", error);
+  }
+};
+
+/**
+ * 🧹 ลบ RefreshToken ที่หมดอายุ
+ */
+const cleanupExpiredRefreshTokens = async () => {
+  try {
+    const now = moment().tz(TZ).toDate();
+
+    const deletedCount = await RefreshToken.destroy({
+      where: {
+        expiresAt: {
+          [Op.lt]: now, // expiresAt < เวลาปัจจุบัน
+        },
+      },
+    });
+
+    console.log(
+      `[CRON][RefreshToken] ${moment(now)
+        .tz(TZ)
+        .format("YYYY-MM-DD HH:mm:ss")} ลบ refresh token หมดอายุแล้ว ${deletedCount} รายการ`
+    );
+  } catch (error) {
+    console.error("[CRON][RefreshToken] Error:", error);
+  }
+};
+
+/**
  * ▶️ เริ่ม cron ทั้งชุด
  */
 function startDailyJobs() {
@@ -192,7 +242,9 @@ function startDailyJobs() {
   syncGroupsFromApi();
 
   // ⚠️ ปกติไม่ต้องรันทันที (กันพลาด)
-  // monthlyUserCount();
+  //monthlyUserCount();
+  //cleanupOldNotifications();
+  //cleanupExpiredRefreshTokens();
 
   // ⏰ รันทุกวัน 00:01
   cron.schedule(
@@ -200,6 +252,26 @@ function startDailyJobs() {
     () => {
       console.log("⏰ Running daily job: syncGroupsFromApi()");
       syncGroupsFromApi();
+    },
+    { timezone: TZ }
+  );
+
+  // ⏰ รันทุกวัน 00:10
+  cron.schedule(
+    "10 0 * * *",
+    () => {
+      console.log("⏰ Running daily job: cleanupExpiredRefreshTokens()");
+      cleanupExpiredRefreshTokens();
+    },
+    { timezone: TZ }
+  );
+
+  // ⏰ รันทุกวัน 01:01
+  cron.schedule(
+    "1 1 * * *",
+    () => {
+      console.log("⏰ Running daily job: cleanupOldNotifications()");
+      cleanupOldNotifications();
     },
     { timezone: TZ }
   );
@@ -219,5 +291,7 @@ module.exports = {
   startDailyJobs,
   syncGroupsFromApi,
   syncGroupAiFromAiTable,
+  cleanupOldNotifications,
+  cleanupExpiredRefreshTokens,
   monthlyUserCount,
 };

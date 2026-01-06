@@ -23,7 +23,12 @@ module.exports = (sequelize, DataTypes) => {
     old_data: DataTypes.TEXT,
     new_data: DataTypes.TEXT,
     old_status: DataTypes.BOOLEAN,
-    new_status: DataTypes.BOOLEAN
+    new_status: DataTypes.BOOLEAN,
+    locale: {
+      type: DataTypes.ENUM('th', 'en'),
+      allowNull: false,
+      defaultValue: 'th',
+    },
   }, {
     sequelize,
     freezeTableName: true,

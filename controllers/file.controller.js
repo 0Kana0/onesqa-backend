@@ -10,7 +10,7 @@ if (!fs.existsSync(UPLOAD_DIR)) fs.mkdirSync(UPLOAD_DIR, { recursive: true });
 
 const sanitize = (name) => name.replace(/[^a-zA-Z0-9._-]/g, '_');
 
-exports.saveUpload = async (upload, ai_id, user_id) => {
+exports.saveUpload = async (upload, ai_id, user_id, ctx) => {
   const { filename, mimetype, encoding, createReadStream } = await upload;
   const stream = createReadStream();
 
@@ -19,6 +19,7 @@ exports.saveUpload = async (upload, ai_id, user_id) => {
     aiId: ai_id,
     userId: user_id,
     // minPercent: 15, // ไม่ส่งก็ได้ ใช้ค่า default
+    ctx
   });
 
   console.log("filename", filename);

@@ -5,9 +5,9 @@ const { requireAuth } = require("../../utils/authGuard");
 
 module.exports = {
   Query: {
-    myNotifications: async (_parent, { user_id, first = 20, after }, ctx) => {
+    myNotifications: async (_parent, { locale, user_id, first = 20, after }, ctx) => {
       requireAuth(ctx);
-      return NotificationController.myNotifications(user_id, { first, after });
+      return NotificationController.myNotifications(locale, user_id, { first, after });
     },
   },
 

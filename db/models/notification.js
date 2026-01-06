@@ -21,7 +21,12 @@ module.exports = (sequelize, DataTypes) => {
     title: DataTypes.STRING,
     message: DataTypes.TEXT,
     type: DataTypes.STRING,
-    user_id: DataTypes.INTEGER
+    user_id: DataTypes.INTEGER,
+    locale: {
+      type: DataTypes.ENUM('th', 'en'),
+      allowNull: false,
+      defaultValue: 'th',
+    },
   }, {
     sequelize,
     freezeTableName: true,

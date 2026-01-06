@@ -1,9 +1,10 @@
 const moment = require("moment-timezone");
 const { Op, fn, col } = require("sequelize");
-const db = require('../db/models'); // หรือ '../../db/models' ถ้าโปรเจกต์คุณใช้ path นั้น
+const db = require("../db/models"); // หรือ '../../db/models' ถ้าโปรเจกต์คุณใช้ path นั้น
 const { Group, Ai, User, User_role, Group_ai, User_token, User_ai } = db;
-const { auditLog } = require('../utils/auditLog'); // ปรับ path ให้ตรง
-const { notifyUser } = require('../utils/notifier');
+const { auditLog } = require("../utils/auditLog"); // ปรับ path ให้ตรง
+const { notifyUser } = require("../utils/notifier");
+const { getLocale, getCurrentUser } = require("../utils/currentUser");
 
 const TZ = "Asia/Bangkok";
 
@@ -104,7 +105,10 @@ exports.listGroups = async ({ page, pageSize, where: filters = {} } = {}) => {
       attributes: [
         [col("user.group_name"), "group_name"],
         [col("ai.model_use_name"), "model_use_name"],
-        [fn("COALESCE", fn("SUM", col("User_token.total_token")), 0), "tokens_today"],
+        [
+          fn("COALESCE", fn("SUM", col("User_token.total_token")), 0),
+          "tokens_today",
+        ],
       ],
       include: [
         {
@@ -116,7 +120,9 @@ exports.listGroups = async ({ page, pageSize, where: filters = {} } = {}) => {
         },
         { model: Ai, as: "ai", attributes: [], required: false },
       ],
-      where: { createdAt: { [Op.gte]: startOfToday, [Op.lt]: startOfTomorrow } },
+      where: {
+        createdAt: { [Op.gte]: startOfToday, [Op.lt]: startOfTomorrow },
+      },
       group: [col("user.group_name"), col("ai.model_use_name")],
       raw: true,
     });
@@ -126,7 +132,10 @@ exports.listGroups = async ({ page, pageSize, where: filters = {} } = {}) => {
       attributes: [
         [col("user.group_name"), "group_name"],
         [col("ai.model_use_name"), "model_use_name"],
-        [fn("COALESCE", fn("SUM", col("User_token.total_token")), 0), "tokens_month"],
+        [
+          fn("COALESCE", fn("SUM", col("User_token.total_token")), 0),
+          "tokens_month",
+        ],
       ],
       include: [
         {
@@ -138,7 +147,9 @@ exports.listGroups = async ({ page, pageSize, where: filters = {} } = {}) => {
         },
         { model: Ai, as: "ai", attributes: [], required: false },
       ],
-      where: { createdAt: { [Op.gte]: startOfMonth, [Op.lt]: startOfNextMonth } },
+      where: {
+        createdAt: { [Op.gte]: startOfMonth, [Op.lt]: startOfNextMonth },
+      },
       group: [col("user.group_name"), col("ai.model_use_name")],
       raw: true,
     });
@@ -148,8 +159,14 @@ exports.listGroups = async ({ page, pageSize, where: filters = {} } = {}) => {
       attributes: [
         [col("user.group_name"), "group_name"],
         [col("ai.model_use_name"), "model_use_name"],
-        [fn("COALESCE", fn("SUM", col("User_ai.token_count")), 0), "token_count_sum"],
-        [fn("COALESCE", fn("SUM", col("User_ai.token_all")), 0), "token_all_sum"],
+        [
+          fn("COALESCE", fn("SUM", col("User_ai.token_count")), 0),
+          "token_count_sum",
+        ],
+        [
+          fn("COALESCE", fn("SUM", col("User_ai.token_all")), 0),
+          "token_all_sum",
+        ],
       ],
       include: [
         {
@@ -224,7 +241,8 @@ exports.listGroups = async ({ page, pageSize, where: filters = {} } = {}) => {
       // 1) today/average จาก User_token.total_token (รวมทุก user ในกลุ่มนั้น)
       const tokensToday = todayMap.get(key) ?? 0;
       const tokensMonth = monthMap.get(key) ?? 0;
-      const average = daysElapsed > 0 ? Math.round(tokensMonth / daysElapsed) : 0;
+      const average =
+        daysElapsed > 0 ? Math.round(tokensMonth / daysElapsed) : 0;
 
       // 2) token_count/token_all จาก User_ai (รวมทุก user ในกลุ่มนั้น)
       const ua = userAiMap.get(key) ?? { token_count: 0, token_all: 0 };
@@ -285,180 +303,195 @@ exports.getGroupById = async (id) => {
   });
 };
 
+exports.getGroupByName = async (name) => {
+  return await Group.findOne({
+    where: { name }, // หรือ { group_name: name }
+    include: [
+      {
+        model: Ai,
+        as: "ai",
+        attributes: ["id", "model_name", "model_use_name", "model_type"],
+        required: false,
+      },
+      {
+        model: Group_ai,
+        as: "group_ai",
+        attributes: ["id", "ai_id", "init_token"],
+        include: [
+          {
+            model: Ai,
+            as: "ai",
+            attributes: ["id", "model_name", "model_use_name", "model_type"],
+          },
+        ],
+        required: false,
+      },
+    ],
+  });
+};
+
 exports.updateGroup = async (id, input, ctx) => {
-  return await Group.sequelize.transaction(async (t) => {
+  const locale = await getLocale(ctx);
+
+  console.log("input", input);
+
+  // ===== helpers =====
+  const fmt = (v) =>
+    v === null || v === undefined ? "-" : Number(v).toLocaleString();
+
+  // ✅ robust status mapper (รองรับ true/false, 1/0, "active"/"inactive", ไทย ฯลฯ)
+  const toStatusKey = (v) => {
+    if (v === null || v === undefined) return null;
+
+    if (typeof v === "boolean") return v ? "active" : "inactive";
+    if (typeof v === "number") return v === 1 ? "active" : v === 0 ? "inactive" : String(v);
+
+    if (typeof v === "string") {
+      const s = v.trim().toLowerCase();
+      const activeSet = new Set(["true", "1", "yes", "y", "active", "enabled", "enable", "on", "ใช้งาน", "ใช้งานอยู่"]);
+      const inactiveSet = new Set(["false", "0", "no", "n", "inactive", "disabled", "disable", "off", "ไม่ใช้งาน", "ไม่ใช้งานอยู่"]);
+
+      if (activeSet.has(s)) return "active";
+      if (inactiveSet.has(s)) return "inactive";
+      return v; // fallback เป็น string เดิม
+    }
+
+    return String(v);
+  };
+
+  const statusLabel = (val, lang = "th") => {
+    const key = toStatusKey(val);
+    if (key === "active") return lang === "th" ? "อนุมัติ" : "Active";
+    if (key === "inactive") return lang === "th" ? "ไม่อนุมัติ" : "Inactive";
+    if (key === null) return "-";
+    return String(key);
+  };
+
+  const getAdminUsers = async () => {
+    return await User.findAll({
+      attributes: ["id", "email", "locale", "loginAt"],
+      include: [
+        {
+          model: User_role,
+          as: "user_role",
+          where: { role_id: { [Op.in]: [3, 4] } },
+          attributes: [],
+        },
+      ],
+    });
+  };
+
+  // ===== validate input =====
+  const { group_ai, model_use_name, ...groupFields } = input || {};
+
+  if (Array.isArray(group_ai)) {
+    for (const ga of group_ai) {
+      if (ga.init_token != null && ga.init_token < 0)
+        throw new Error(locale === "th" ? "init_token ต้องมากกว่า 0" : "init_token must be greater than 0");
+      if (ga.plus_token != null && ga.plus_token < 0)
+        throw new Error(locale === "th" ? "plus_token ต้องมากกว่า 0" : "plus_token must be greater than 0");
+      if (ga.minus_token != null && ga.minus_token < 0)
+        throw new Error(locale === "th" ? "minus_token ต้องมากกว่า 0" : "minus_token must be greater than 0");
+    }
+  }
+
+  // ===== events to fire AFTER COMMIT =====
+  const events = [];
+
+  // =======================
+  // PHASE 1 : DB TRANSACTION
+  // =======================
+  const snapshot = await Group.sequelize.transaction(async (t) => {
+    // lock row ป้องกัน concurrent update
     const row = await Group.findByPk(id, {
       transaction: t,
+    });
+
+    if (!row) {
+      throw new Error(locale === "th" ? "ไม่พบกลุ่ม" : "Group not found");
+    }
+
+    // load group_ai แบบเบา
+    const existingGroupAis = await Group_ai.findAll({
+      where: { group_id: id },
       include: [
         {
           model: Ai,
           as: "ai",
-          attributes: ["id", "model_name", "model_use_name", "model_type"],
-          required: false,
-        },
-        {
-          model: Group_ai,
-          as: "group_ai",
-          attributes: ["id", "ai_id", "init_token"],
-          include: [
-            {
-              model: Ai,
-              as: "ai",
-              attributes: ["id", "model_name", "model_use_name", "model_type"],
-              required: false,
-            },
-          ],
+          attributes: ["id", "model_use_name"],
           required: false,
         },
       ],
+      transaction: t,
     });
 
-    if (!row) throw new Error("Group not found");
-
-    const { group_ai, model_use_name, ...groupFields } = input || {};
-    const fmt = (v) =>
-      v === null || v === undefined ? "-" : Number(v).toLocaleString();
-
-    const getAdminUsers = async () => {
-      return await User.findAll({
-        attributes: ["id", "email"],
-        include: [
-          {
-            model: User_role,
-            as: "user_role",
-            where: { role_id: { [Op.in]: [3, 4] } },
-            attributes: [],
-          },
-        ],
-        transaction: t,
-      });
-    };
-
-    // ---------------- validate init_token ----------------
-    if (Array.isArray(group_ai)) {
-      for (const ga of group_ai) {
-        if (ga.init_token != null && ga.init_token < 0) {
-          throw new Error("init_token ต้องมากกว่า 0");
-        }
-        if (ga.plus_token != null && ga.plus_token < 0) {
-          throw new Error('plus_token ต้องมากกว่า 0');
-        }
-        if (ga.minus_token != null && ga.minus_token < 0) {
-          throw new Error('minus_token ต้องมากกว่า 0');
-        }
-      }
-    }
-
-    let isModelChanged = false;
-    let isInitTokenChanged = false;
-
-    // ---------------- log & notify การเปลี่ยน Model เริ่มต้น (ai_id บน Group) ----------------
+    // ---------- detect default model change ----------
     if (
       groupFields?.ai_id !== undefined &&
       Number(row.ai_id) !== Number(groupFields.ai_id)
     ) {
-      isModelChanged = true;
-
-      const oldName = row.ai?.model_use_name ?? "-";
-      const newName = model_use_name ?? "-";
-
-      const old_message = `Model เริ่มต้นของกลุ่มผู้ใช้งาน (${row.name}) ${oldName}`;
-      const new_message = `Model เริ่มต้นของกลุ่มผู้ใช้งาน (${row.name}) ${newName}`;
-
-      await auditLog({
-        ctx,
-        log_type: "GROUP",
-        old_data: old_message,
-        new_data: new_message,
-        old_status: null,
-        new_status: null,
+      events.push({
+        type: "MODEL_CHANGED",
+        groupName: row.name,
+        oldModel: row.ai_id,
+        newModel: groupFields.ai_id,
+        oldName: row.model_use_name ?? "-",
+        newName: model_use_name ?? "-",
       });
+    }
 
-      const adminUsers = await getAdminUsers();
-      for (const admin of adminUsers) {
-        await notifyUser({
-          userId: admin.id,
-          title: "เเจ้งเตือนตั้งค่ากลุ่มผู้ใช้งาน",
-          message: `Model เริ่มต้นของกลุ่มผู้ใช้งาน (${row.name}) จาก ${oldName} เป็น ${newName}`,
-          type: "INFO",
-          to: admin.email,
+    // ✅ ---------- detect status change ----------
+    // หมายเหตุ: ใช้ groupFields.status เป็นหลัก (ถ้าคุณใช้ field ชื่ออื่น เช่น activity ก็เปลี่ยนตรงนี้ได้)
+    if (groupFields?.status !== undefined) {
+      const oldKey = toStatusKey(row.status);
+      const newKey = toStatusKey(groupFields.status);
+
+      // เปรียบเทียบแบบ normalize แล้ว
+      if (String(oldKey) !== String(newKey)) {
+        events.push({
+          type: "STATUS_CHANGED",
+          groupName: row.name,
+          oldValue: row.status,
+          newValue: groupFields.status,
         });
       }
     }
 
-    // ---------------- log & notify การเปลี่ยน init_token (group_ai) ----------------
+    // ---------- detect init_token change ----------
     if (Array.isArray(group_ai)) {
-      // map ของเดิม
       const existingByAi = new Map(
-        (row.group_ai || []).map((ga) => [Number(ga.ai_id), ga])
+        existingGroupAis.map((ga) => [Number(ga.ai_id), ga])
       );
 
-      // map ของ input (กันซ้ำ ai_id)
       const inputByAi = new Map();
       for (const it of group_ai) {
         const key = Number(it.ai_id);
         if (!inputByAi.has(key)) inputByAi.set(key, it);
       }
 
-      const adminUsers = await getAdminUsers(); // ดึงครั้งเดียว
-
-      // เทียบเฉพาะตัวที่มีเดิมและมีใน input
       for (const [aiId, oldData] of existingByAi.entries()) {
         const newData = inputByAi.get(aiId);
         if (!newData) continue;
 
-        if (newData.init_token !== undefined && oldData.init_token !== newData.init_token) {
-          isInitTokenChanged = true;
-
-          const modelName = oldData.ai?.model_use_name ?? `AI:${aiId}`;
-
-          const old_message = `จำนวน Token เริ่มต้นของ Model (${modelName}) ของกลุ่มผู้ใช้งาน (${row.name}) ${fmt(
-            oldData.init_token
-          )}`;
-          const new_message = `จำนวน Token เริ่มต้นของ Model (${modelName}) ของกลุ่มผู้ใช้งาน (${row.name}) ${fmt(
-            newData.init_token
-          )}`;
-
-          await auditLog({
-            ctx,
-            log_type: "GROUP",
-            old_data: old_message,
-            new_data: new_message,
-            old_status: null,
-            new_status: null,
+        if (
+          newData.init_token !== undefined &&
+          oldData.init_token !== newData.init_token
+        ) {
+          events.push({
+            type: "INIT_TOKEN_CHANGED",
+            groupName: row.name,
+            modelName: oldData.ai?.model_use_name ?? `AI:${aiId}`,
+            oldValue: oldData.init_token,
+            newValue: newData.init_token,
           });
-
-          for (const admin of adminUsers) {
-            await notifyUser({
-              userId: admin.id,
-              title: "เเจ้งเตือนตั้งค่ากลุ่มผู้ใช้งาน",
-              message: `จำนวน Token เริ่มต้นของ Model (${modelName}) ของกลุ่มผู้ใช้งาน (${row.name}) จาก ${fmt(
-                oldData.init_token
-              )} เป็น ${fmt(newData.init_token)}`,
-              type: "INFO",
-              to: admin.email,
-            });
-          }
         }
       }
     }
 
-    // ต้องมีการเปลี่ยน model หรือ init_token ถึงจะเขียน DB
-    const allowWrite = isModelChanged || isInitTokenChanged;
-
-    if (!allowWrite) {
-      return row;
-    }
-
-    // ---------------- update ฟิลด์ Group ปกติ ----------------
-    if (Object.keys(groupFields || {}).length) {
-      await row.update(groupFields, { transaction: t });
-    }
-
-    // ---------------- group_ai: upsert เฉพาะ object ที่มีการเปลี่ยน + ลบตัวที่หายไป ----------------
+    // ---------- เพิ่ม/ลด token ของผู้ใช้านในกลุ่ม ----------
     if (Array.isArray(group_ai)) {
       const existingByAi = new Map(
-        (row.group_ai || []).map((ga) => [Number(ga.ai_id), ga])
+        existingGroupAis.map((ga) => [Number(ga.ai_id), ga])
       );
 
       const inputByAi = new Map();
@@ -467,7 +500,105 @@ exports.updateGroup = async (id, input, ctx) => {
         if (!inputByAi.has(key)) inputByAi.set(key, it);
       }
 
-      // upsert / update
+      for (const [aiId, oldData] of existingByAi.entries()) {
+        const newData = inputByAi.get(aiId);
+        if (!newData) continue;
+
+        const result_token = newData.plus_token - newData.minus_token;
+
+        // มีอันใดอันนึงมากกว่า 0 และ ผลรวมทั้งสองไม่เท่ากับ 0
+        if (
+          (newData.plus_token !== 0 || newData.minus_token !== 0) &&
+          result_token !== 0
+        ) {
+          // console.log("groupName", row.name);
+          // console.log("modelName", oldData.ai?.model_use_name);
+          // console.log("plus_token", newData.plus_token);
+          // console.log("minus_token", newData.minus_token);
+
+          // 1) หา user ids ในกลุ่มนี้
+          const users = await User.findAll({
+            where: { group_name: row.name },
+            attributes: ["id"],
+            raw: true,
+          });
+          const userIds = users.map((u) => u.id);
+
+          // ถ้าต้องการเติม token
+          if (result_token > 0) {
+            // จำนวน token ทั้งหมดที่เหลืออยู่
+            const aiData = await Ai.findByPk(Number(aiId));
+
+            // จำนวน token ทั้งหมดที่ได้เเจกจ่ายไปแล้ว
+            const allUseToken = await User_ai.sum("token_count", {
+              where: {
+                ai_id: aiId,
+                token_count: { [Op.ne]: 0 },
+              },
+            });
+
+            // ถ้าจำนวน token ทั้งหมดที่ได้เเจกจ่ายไปแล้ว + ผลคูณของ token ที่จะเพิ่มกับจำนวนผู้ใช้งาน มากกว่า จำนวน token ทั้งหมดที่เหลืออยู่ ให้ throw error
+            if (allUseToken + (result_token * users.length) >= aiData.token_count) {
+              throw new Error(
+                locale === "th"
+                  ? "จำนวน token ที่เหลืออยู่ไม่เพียงพอ"
+                  : "Insufficient remaining tokens"
+              );
+            }
+
+            // 2) bulk update user_ai
+            const [affectedRows] = await User_ai.update({
+              token_count: User_ai.sequelize.literal(`COALESCE(token_count, 0) + (${result_token})`),
+              token_all: User_ai.sequelize.literal(`COALESCE(token_count, 0) + (${result_token})`),
+            }, {
+              where: {
+                ai_id: aiId,
+                user_id: { [Op.in]: userIds },
+              },
+            });
+
+          // ถ้าต้องการลด token
+          } else if (result_token < 0) {
+            // 2) bulk update user_ai
+            const [affectedRows] = await User_ai.update({
+              token_count: User_ai.sequelize.literal(`GREATEST(COALESCE(token_count, 0) + (${result_token}), 0)`),
+              token_all: User_ai.sequelize.literal(`GREATEST(COALESCE(token_count, 0) + (${result_token}), 0)`),
+            }, {
+              where: {
+                ai_id: aiId,
+                user_id: { [Op.in]: userIds },
+              },
+            });
+          }
+
+          events.push({
+            type: "PLUSMINUS_TOKEN_CHANGED",
+            groupName: row.name,
+            aiId: aiId,
+            modelName: oldData.ai?.model_use_name ?? `AI:${aiId}`,
+            result_token: result_token
+          });
+        }
+      }
+    }
+
+    // ---------- update Group ----------
+    if (Object.keys(groupFields || {}).length) {
+      await row.update(groupFields, { transaction: t });
+    }
+
+    // ---------- upsert group_ai ----------
+    if (Array.isArray(group_ai)) {
+      const existingByAi = new Map(
+        existingGroupAis.map((ga) => [Number(ga.ai_id), ga])
+      );
+
+      const inputByAi = new Map();
+      for (const it of group_ai) {
+        const key = Number(it.ai_id);
+        if (!inputByAi.has(key)) inputByAi.set(key, it);
+      }
+
       for (const [aiId, it] of inputByAi.entries()) {
         const oldData = existingByAi.get(aiId);
         const newInit = it.init_token ?? null;
@@ -481,18 +612,12 @@ exports.updateGroup = async (id, input, ctx) => {
             },
             { transaction: t }
           );
-        } else {
-          const hasChanged = oldData.init_token !== newInit;
-          if (hasChanged) {
-            await oldData.update(
-              { init_token: newInit },
-              { transaction: t }
-            );
-          }
+        } else if (oldData.init_token !== newInit) {
+          await oldData.update({ init_token: newInit }, { transaction: t });
         }
       }
 
-      // delete ตัวที่มีใน DB แต่ไม่มีใน input
+      // delete ตัวที่หายไป
       for (const [aiId, oldData] of existingByAi.entries()) {
         if (!inputByAi.has(aiId)) {
           await oldData.destroy({ transaction: t });
@@ -500,36 +625,265 @@ exports.updateGroup = async (id, input, ctx) => {
       }
     }
 
-    // ---------------- โหลดกลับพร้อม relation ----------------
-    return await Group.findByPk(id, {
-      transaction: t,
-      include: [
-        {
-          model: Ai,
-          as: "ai",
-          attributes: ["id", "model_name", "model_use_name", "model_type"],
-          required: false,
-        },
-        {
-          model: Group_ai,
-          as: "group_ai",
-          attributes: ["id", "ai_id", "init_token"],
-          include: [
-            {
-              model: Ai,
-              as: "ai",
-              attributes: ["id", "model_name", "model_use_name", "model_type"],
-              required: false,
-            },
-          ],
-          required: false,
-        },
-      ],
-    });
+    return {
+      groupId: id,
+      groupName: row.name,
+    };
+  });
+
+  // =======================
+  // PHASE 2 : AFTER COMMIT
+  // =======================
+  if (events.length) {
+    const adminUsers = await getAdminUsers();
+
+    for (const ev of events) {
+      if (ev.type === "MODEL_CHANGED") {
+        // audit
+        await auditLog({
+          ctx,
+          locale: "th",
+          log_type: "GROUP",
+          old_data: `Model เริ่มต้นของกลุ่มผู้ใช้งาน (${ev.groupName}) ${ev.oldName}`,
+          new_data: `Model เริ่มต้นของกลุ่มผู้ใช้งาน (${ev.groupName}) ${ev.newName}`,
+          old_status: null,
+          new_status: null,
+        });
+
+        await auditLog({
+          ctx,
+          locale: "en",
+          log_type: "GROUP",
+          old_data: `Default model for user group (${ev.groupName}) ${ev.oldName}`,
+          new_data: `Default model for user group (${ev.groupName}) ${ev.newName}`,
+          old_status: null,
+          new_status: null,
+        });
+
+        for (const admin of adminUsers) {
+          await notifyUser({
+            locale: "th",
+            recipient_locale: admin.locale,
+            loginAt: admin.loginAt,
+            userId: admin.id,
+            title: "เเจ้งเตือนตั้งค่ากลุ่มผู้ใช้งาน",
+            message: `Model เริ่มต้นของกลุ่มผู้ใช้งาน (${ev.groupName}) จาก ${ev.oldName} เป็น ${ev.newName}`,
+            type: "INFO",
+            to: admin.email,
+          });
+
+          await notifyUser({
+            locale: "en",
+            recipient_locale: admin.locale,
+            loginAt: admin.loginAt,
+            userId: admin.id,
+            title: "User Group Settings Notification",
+            message: `The default model for user group (${ev.groupName}) has been changed from ${ev.oldName} to ${ev.newName}.`,
+            type: "INFO",
+            to: admin.email,
+          });
+        }
+      }
+
+      // ✅ STATUS_CHANGED (เพิ่มใหม่)
+      if (ev.type === "STATUS_CHANGED") {
+        const userInGroups = await User.findAll({
+          attributes: ["id", "email", "locale", "loginAt"],
+          where: { group_name: ev.groupName },
+        });
+
+        // เเก้ไข ai_access ของ user ทั้งหมดใน group_name
+        const edituser = await User.update(
+          { ai_access: ev.newValue },
+          { where: { group_name: ev.groupName } }
+        )
+
+        const oldTh = statusLabel(ev.oldValue, "th");
+        const newTh = statusLabel(ev.newValue, "th");
+        const oldEn = statusLabel(ev.oldValue, "en");
+        const newEn = statusLabel(ev.newValue, "en");
+
+        await auditLog({
+          ctx,
+          locale: "th",
+          log_type: "GROUP",
+          old_data: `กำหนด AI Access ของกลุ่มผู้ใช้งาน (${ev.groupName})`,
+          new_data: `กำหนด AI Access ของกลุ่มผู้ใช้งาน (${ev.groupName})`,
+          old_status: ev.oldValue,
+          new_status: ev.newValue,
+        });
+
+        await auditLog({
+          ctx,
+          locale: "en",
+          log_type: "GROUP",
+          old_data: `Set AI Access for user group (${ev.groupName})`,
+          new_data: `Set AI Access for user group (${ev.groupName})`,
+          old_status: ev.oldValue,
+          new_status: ev.newValue,
+        });
+
+        for (const admin of adminUsers) {
+          await notifyUser({
+            locale: "th",
+            recipient_locale: admin.locale,
+            loginAt: admin.loginAt,
+            userId: admin.id,
+            title: "เเจ้งเตือนตั้งค่ากลุ่มผู้ใช้งาน",
+            message: `กำหนด AI Access ของกลุ่มผู้ใช้งาน (${ev.groupName}) จาก ${oldTh} เป็น ${newTh}`,
+            type: "INFO",
+            to: admin.email,
+          });
+
+          await notifyUser({
+            locale: "en",
+            recipient_locale: admin.locale,
+            loginAt: admin.loginAt,
+            userId: admin.id,
+            title: "User Group Settings Notification",
+            message: `AI access for user group (${ev.groupName}) has been changed from ${oldEn} to ${newEn}.`,
+            type: "INFO",
+            to: admin.email,
+          });
+        }
+
+        for (const user of userInGroups) {
+          await notifyUser({
+            locale: "th",
+            recipient_locale: user.locale,
+            loginAt: user.loginAt,
+            userId: user.id,
+            title: "เเจ้งเตือนตั้งค่ากลุ่มผู้ใช้งาน",
+            message: `กำหนด AI Access ของกลุ่มผู้ใช้งาน (${ev.groupName}) จาก ${oldTh} เป็น ${newTh}`,
+            type: "INFO",
+            to: user.email,
+          });
+
+          await notifyUser({
+            locale: "en",
+            recipient_locale: user.locale,
+            loginAt: user.loginAt,
+            userId: user.id,
+            title: "User Group Settings Notification",
+            message: `AI access for user group (${ev.groupName}) has been changed from ${oldEn} to ${newEn}.`,
+            type: "INFO",
+            to: user.email,
+          });
+        }
+      }
+
+      if (ev.type === "INIT_TOKEN_CHANGED") {
+        await auditLog({
+          ctx,
+          locale: "th",
+          log_type: "GROUP",
+          old_data: `จำนวน Token เริ่มต้นของ Model (${ev.modelName}) ของกลุ่มผู้ใช้งาน (${ev.groupName}) ${fmt(ev.oldValue)}`,
+          new_data: `จำนวน Token เริ่มต้นของ Model (${ev.modelName}) ของกลุ่มผู้ใช้งาน (${ev.groupName}) ${fmt(ev.newValue)}`,
+          old_status: null,
+          new_status: null,
+        });
+
+        await auditLog({
+          ctx,
+          locale: "en",
+          log_type: "GROUP",
+          old_data: `Initial token amount for model (${ev.modelName}) in user group (${ev.groupName}) ${fmt(ev.oldValue)}`,
+          new_data: `Initial token amount for model (${ev.modelName}) in user group (${ev.groupName}) ${fmt(ev.newValue)}`,
+          old_status: null,
+          new_status: null,
+        });
+
+        for (const admin of adminUsers) {
+          await notifyUser({
+            locale: "th",
+            recipient_locale: admin.locale,
+            loginAt: admin.loginAt,
+            userId: admin.id,
+            title: "เเจ้งเตือนตั้งค่ากลุ่มผู้ใช้งาน",
+            message: `จำนวน Token เริ่มต้นของ Model (${ev.modelName}) ของกลุ่มผู้ใช้งาน (${ev.groupName}) จาก ${fmt(ev.oldValue)} เป็น ${fmt(ev.newValue)}`,
+            type: "INFO",
+            to: admin.email,
+          });
+
+          await notifyUser({
+            locale: "en",
+            recipient_locale: admin.locale,
+            loginAt: admin.loginAt,
+            userId: admin.id,
+            title: "User Group Settings Notification",
+            message: `The initial token amount for model (${ev.modelName}) in user group (${ev.groupName}) has been changed from ${fmt(ev.oldValue)} to ${fmt(ev.newValue)}.`,
+            type: "INFO",
+            to: admin.email,
+          });
+        }
+      }
+
+      if (ev.type === "PLUSMINUS_TOKEN_CHANGED") {
+        const userInGroups = await User.findAll({
+          attributes: ["id", "email", "locale", "loginAt"],
+          where: { group_name: ev.groupName },
+        });
+
+        for (const user of userInGroups) {
+
+          const user_ai_token = await User_ai.findOne({ 
+            attributes: ["token_count"],
+            where: { user_id: user.id, ai_id: ev.aiId }
+          })
+
+          console.log("user_ai_token", user_ai_token);
+
+          await notifyUser({
+            locale: "th",
+            recipient_locale: user.locale,
+            loginAt: user.loginAt,
+            userId: user.id,
+            title: "เเจ้งเตือนตั้งค่า Model ของผู้ใช้งาน",
+            message: `จำนวน Token ของ Model (${ev.modelName}) จาก ${(user_ai_token.token_count - ev.result_token).toLocaleString()} เป็น ${user_ai_token.token_count.toLocaleString()}`,
+            type: "INFO",
+            to: user.email,
+          });
+
+          await notifyUser({
+            locale: "en",
+            recipient_locale: user.locale,
+            loginAt: user.loginAt,
+            userId: user.id,
+            title: "User Model Settings Notification",
+            message: `Token count for model (${ev.modelName}) has been changed from ${(user_ai_token.token_count - ev.result_token).toLocaleString()} to ${user_ai_token.token_count.toLocaleString()}.`,
+            type: "INFO",
+            to: user.email,
+          });
+        }
+      }
+    }
+  }
+
+  // reload ล่าสุด
+  return await Group.findByPk(id, {
+    include: [
+      {
+        model: Ai,
+        as: "ai",
+        attributes: ["id", "model_name", "model_use_name", "model_type"],
+      },
+      {
+        model: Group_ai,
+        as: "group_ai",
+        attributes: ["id", "ai_id", "init_token"],
+        include: [
+          {
+            model: Ai,
+            as: "ai",
+            attributes: ["id", "model_name", "model_use_name", "model_type"],
+          },
+        ],
+      },
+    ],
   });
 };
 
 exports.deleteGroup = async (id) => {
   const count = await Group.destroy({ where: { id } });
   return count > 0;
-}
+};

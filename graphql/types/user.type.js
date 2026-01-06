@@ -15,7 +15,8 @@ module.exports = `
   }
 
   type RoleName {
-    role_name: String!
+    role_name_th: String!
+    role_name_en: String!
   }
   type UserRole {
     id: ID!
@@ -90,7 +91,8 @@ module.exports = `
 
   input UserRoleInput {
     role_id: ID!
-    role_name: String
+    role_name_th: String
+    role_name_en: String
   }
   input UserAiInput {
     ai_id: ID!
@@ -114,6 +116,11 @@ module.exports = `
     user_role: [UserRoleInput!]
     user_ai: [UserAiInput!]
   }
+  input ThemeAndLocaleInput {
+    color_mode: ColorMode
+    locale: localeMode
+    alert: Boolean
+  }
 
   extend type Query {
     users(page: Int, pageSize: Int, where: UserFilterInput): UserPage!
@@ -122,6 +129,7 @@ module.exports = `
 
   extend type Mutation {
     updateUser(id: ID!, input: UserInput!): User!
+    updateThemeAndLocale(id: ID!, input: ThemeAndLocaleInput!): User!
     deleteUser(id: ID!): Boolean!
     syncUsersFromApi: SyncUser
   }

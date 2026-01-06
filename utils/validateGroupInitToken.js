@@ -15,9 +15,14 @@ const { User, RefreshToken, User_role, User_ai, Role, Ai, Group, Group_ai } = db
 async function validateGroupInitTokenNotExceedAiTokenCount({
   groupName,
   aiExists,
+  locale
 }) {
   const group = await Group.findOne({ where: { name: groupName } });
-  if (!group) throw new Error(`Group not found: ${groupName}`);
+  if (!group) throw new Error(
+    locale === "th"
+      ? `ไม่พบกลุ่ม: ${groupName}`
+      : `Group not found: ${groupName}`
+  );
 
   const groupAis = await Group_ai.findAll({ where: { group_id: group.id } });
 
@@ -50,7 +55,9 @@ async function validateGroupInitTokenNotExceedAiTokenCount({
 
   if (violations.length) {
     throw new Error(
-      `จำนวน Token มีไม่เพียงพอสำหรับการเข้าสู่ระบบ`
+      locale === "th"
+        ? `จำนวน Token มีไม่เพียงพอสำหรับการเข้าสู่ระบบ`
+        : `Insufficient tokens to log in`
     );
   }
 

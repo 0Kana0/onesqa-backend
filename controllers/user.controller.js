@@ -6,6 +6,7 @@ const db = require("../db/models"); // หรือ '../../db/models' ถ้า�
 const { User, User_role, User_ai, Role, Ai, Chat, Message, Group, Group_ai, User_count, User_token } = db;
 const { auditLog } = require("../utils/auditLog"); // ปรับ path ให้ตรง
 const { notifyUser } = require("../utils/notifier"); // ที่ไฟล์ service/controller ของคุณ
+const { getLocale, getCurrentUser } = require("../utils/currentUser");
 const moment = require('moment-timezone');
 
 const TZ = 'Asia/Bangkok';
@@ -40,10 +41,21 @@ exports.listUsers = async ({ page, pageSize, where = {} }) => {
 
   const full = (search || "").replace(/\s+/g, " ").trim();
   if (full) {
-    userWhere[Op.and] = [
-      whereFn(fn("concat_ws", " ", col("firstname"), col("lastname")), {
-        [Op.iLike]: `%${full}%`,
-      }),
+    userWhere[Op.or] = [
+      // ชื่อ + นามสกุล
+      whereFn(
+        fn("concat_ws", " ", col("firstname"), col("lastname")),
+        {
+          [Op.iLike]: `%${full}%`,
+        }
+      ),
+
+      // group_name
+      {
+        group_name: {
+          [Op.iLike]: `%${full}%`,
+        },
+      },
     ];
   }
 
@@ -51,24 +63,29 @@ exports.listUsers = async ({ page, pageSize, where = {} }) => {
 
   // include สำหรับ “กรอง role” (ต้อง join จริงใน query แรก)
   const includeRoleFilter = role
-    ? [
-        {
-          model: User_role,
-          as: "user_role",
-          required: true,
-          attributes: [], // ไม่ต้องเอาคอลัมน์
-          include: [
-            {
-              model: Role,
-              as: "role",
-              required: true,
-              attributes: [],
-              where: { role_name: role },
+  ? [
+      {
+        model: User_role,
+        as: "user_role",
+        required: true,
+        attributes: [], // ไม่ต้องเอาคอลัมน์
+        include: [
+          {
+            model: Role,
+            as: "role",
+            required: true,
+            attributes: [],
+            where: {
+              [Op.or]: [
+                { role_name_th: role },
+                { role_name_en: role },
+              ],
             },
-          ],
-        },
-      ]
-    : [];
+          },
+        ],
+      },
+    ]
+  : [];
 
   // ✅ Query แรก: เอา id + count
   const { rows: idRows, count } = await User.findAndCountAll({
@@ -93,7 +110,7 @@ exports.listUsers = async ({ page, pageSize, where = {} }) => {
     as: "user_role",
     required: false,
     include: [
-      { model: Role, as: "role", attributes: ["role_name"], required: false },
+      { model: Role, as: "role", attributes: ["role_name_th", "role_name_en"], required: false },
     ],
   };
 
@@ -139,7 +156,7 @@ exports.getByUserId = async (id) => {
           {
             model: Role,
             as: "role",
-            attributes: ["role_name"],
+            attributes: ["role_name_th", "role_name_en"],
             required: false,
           },
         ],
@@ -223,6 +240,9 @@ exports.getByUserId = async (id) => {
 
 exports.updateUser = async (id, input, ctx) => {
   return await User.sequelize.transaction(async (t) => {
+
+    const locale = await getLocale(ctx);
+
     const user = await User.findByPk(id, {
       transaction: t,
       include: [
@@ -245,7 +265,7 @@ exports.updateUser = async (id, input, ctx) => {
             {
               model: Role,
               as: "role",
-              attributes: ["role_name"],
+              attributes: ["role_name_th", "role_name_en"],
               required: false,
             },
           ],
@@ -253,7 +273,7 @@ exports.updateUser = async (id, input, ctx) => {
       ],
     });
 
-    if (!user) throw new Error("User not found");
+    if (!user) throw new Error(locale === "th" ? "ไม่พบผู้ใช้" : "User not found");
 
     const { user_role, user_ai, ...userFields } = input;
 
@@ -274,18 +294,24 @@ exports.updateUser = async (id, input, ctx) => {
 
         // ถ้ามีการเพิ่ม token
         if (newData && newData.token_count > oldData.token_count) {
+          // จำนวน token ทั้งหมดที่เหลืออยู่
           const aiData = await Ai.findByPk(Number(oldData.ai_id));
 
+          // จำนวน token ทั้งหมดที่ได้เเจกจ่ายไปแล้ว
           const allUseToken = await User_ai.sum("token_count", {
             where: {
               ai_id: Number(oldData.ai_id),
               token_count: { [Op.ne]: 0 },
             },
           });
-          console.log("allUseToken", allUseToken);
+          //console.log("allUseToken", allUseToken);
           
           if (allUseToken + (newData.token_count - oldData.token_count) >= aiData.token_count) {
-            throw new Error("จำนวน token ที่เหลืออยู่ไม่เพียงพอ");
+            throw new Error(
+              locale === "th"
+                ? "จำนวน token ที่เหลืออยู่ไม่เพียงพอ"
+                : "Insufficient remaining tokens"
+            );
           }
         }
       }
@@ -296,28 +322,63 @@ exports.updateUser = async (id, input, ctx) => {
       const old_role_id = user_role[0].role_id
       const new_role_id = user.user_role[0].role_id
 
-      const old_role_name = user.user_role[0].role.role_name
-      const new_role_name = user_role[0].role_name
+      const old_role_name_th = user.user_role[0].role.role_name_th
+      const new_role_name_th = user_role[0].role_name_th
+
+      const old_role_name_en = user.user_role[0].role.role_name_en
+      const new_role_name_en = user_role[0].role_name_en
 
       if (Number(old_role_id) !== Number(new_role_id)) {
         isRoleChanged = true;
 
-        const old_message = `กำหนดบทบาทของผู้ใช้งาน (${user.firstname} ${user.lastname}) ${old_role_name}`;
-        const new_message = `กำหนดบทบาทของผู้ใช้งาน (${user.firstname} ${user.lastname}) ${new_role_name}`;
+        const th_old_message = `กำหนดบทบาทของผู้ใช้งาน (${user.firstname} ${user.lastname}) ${old_role_name_th}`;
+        const th_new_message = `กำหนดบทบาทของผู้ใช้งาน (${user.firstname} ${user.lastname}) ${new_role_name_th}`;
 
+        const en_old_message = `Set user role (${user.firstname} ${user.lastname}) ${old_role_name_en}`;
+        const en_new_message = `Set user role (${user.firstname} ${user.lastname}) ${new_role_name_en}`;
+
+        // ภาษาไทย
         await auditLog({
           ctx,
+          locale: "th",
           log_type: "ROLE",
-          old_data: old_message,
-          new_data: new_message,
+          old_data: th_old_message,
+          new_data: th_new_message,
           old_status: null,
           new_status: null,
         });
 
+        // ภาษาอังกฤษ
+        await auditLog({
+          ctx,
+          locale: "en",
+          log_type: "ROLE",
+          old_data: en_old_message,
+          new_data: en_new_message,
+          old_status: null,
+          new_status: null,
+        });
+
+        // ภาษาไทย
         await notifyUser({
+          locale: "th",
+          recipient_locale: user.locale,
+          loginAt: user.loginAt,
           userId: id,
           title: "เเจ้งเตือนตั้งค่าบทบาทของผู้ใช้งาน",
-          message: `กำหนดบทบาทของผู้ใช้งาน จาก ${old_role_name} เป็น ${new_role_name} กรุณา Refresh เว็ปไซต์ 1 ครั้ง`,
+          message: `กำหนดบทบาทของผู้ใช้งาน จาก ${old_role_name_th} เป็น ${new_role_name_th} กรุณา Refresh เว็ปไซต์ 1 ครั้ง`,
+          type: "INFO",
+          to: user.email,
+        });
+
+        // ภาษาอังกฤษ
+        await notifyUser({
+          locale: "en",
+          recipient_locale: user.locale,
+          loginAt: user.loginAt,
+          userId: id,
+          title: "User Role Settings Notification",
+          message: `Your user role has been changed from ${old_role_name_en} to ${new_role_name_en}. Please refresh the website once.`,
           type: "INFO",
           to: user.email,
         });
@@ -328,31 +389,60 @@ exports.updateUser = async (id, input, ctx) => {
     if (user.ai_access !== input.ai_access && input.ai_access !== undefined) {
       isStatusChanged = true;
 
-      const message = `กำหนด AI Access ของผู้ใช้งาน (${user.firstname} ${user.lastname})`;
+      const th_message = `กำหนด AI Access ของผู้ใช้งาน (${user.firstname} ${user.lastname})`;
+      const en_message = `Set AI Access for user (${user.firstname} ${user.lastname})`;
 
+      // ภาษาไทย
       await auditLog({
         ctx,
+        locale: "th",
         log_type: "PERSONAL",
-        old_data: message,
-        new_data: message,
+        old_data: th_message,
+        new_data: th_message,
         old_status: user.ai_access,
         new_status: input?.ai_access,
       });
 
-      const toThaiApproval = (val) => {
+      // ภาษาอังกฤษ
+      await auditLog({
+        ctx,
+        locale: "en",
+        log_type: "PERSONAL",
+        old_data: en_message,
+        new_data: en_message,
+        old_status: user.ai_access,
+        new_status: input?.ai_access,
+      });
+
+      const toApproval = (val) => {
         if (typeof val === "string")
           return ["true", "1", "yes", "y"].includes(val.toLowerCase());
         if (typeof val === "number") return val === 1;
         return !!val;
       };
-      const label = (val) => (toThaiApproval(val) ? "อนุมัติ" : "ไม่อนุมัติ");
+      const th_label = (val) => (toApproval(val) ? "อนุมัติ" : "ไม่อนุมัติ");
+      const en_label = (val) => (toApproval(val) ? "Active" : "Inactive");
 
+      // ภาษาไทย
       await notifyUser({
+        locale: "th",
+        recipient_locale: user.locale,
+        loginAt: user.loginAt,
         userId: id,
         title: "เเจ้งเตือนตั้งค่า Model ของผู้ใช้งาน",
-        message: `กำหนด AI Access ของผู้ใช้งาน จาก ${label(
-          user.ai_access
-        )} เป็น ${label(input?.ai_access)}`,
+        message: `กำหนด AI Access ของผู้ใช้งาน จาก ${th_label(user.ai_access)} เป็น ${th_label(input?.ai_access)}`,
+        type: "INFO",
+        to: user.email,
+      });
+
+      // ภาษาอังกฤษ
+      await notifyUser({
+        locale: "en",
+        recipient_locale: user.locale,
+        loginAt: user.loginAt,
+        userId: id,
+        title: "User Model Settings Notification",
+        message: `Your AI access has been changed from ${en_label(user.ai_access)} to ${en_label(input?.ai_access)}.`,
         type: "INFO",
         to: user.email,
       });
@@ -368,22 +458,52 @@ exports.updateUser = async (id, input, ctx) => {
         if (newData && oldData.token_count !== newData.token_count) {
           isTokenChanged = true;
 
-          const old_message = `จำนวน Token ของ Model (${oldData.ai.model_use_name}) ของผู้ใช้งาน (${user.firstname} ${user.lastname}) ${oldData.token_count.toLocaleString()}`;
-          const new_message = `จำนวน Token ของ Model (${oldData.ai.model_use_name}) ของผู้ใช้งาน (${user.firstname} ${user.lastname}) ${newData.token_count.toLocaleString()}`;
+          const th_old_message = `จำนวน Token ของ Model (${oldData.ai.model_use_name}) ของผู้ใช้งาน (${user.firstname} ${user.lastname}) ${oldData.token_count.toLocaleString()}`;
+          const th_new_message = `จำนวน Token ของ Model (${oldData.ai.model_use_name}) ของผู้ใช้งาน (${user.firstname} ${user.lastname}) ${newData.token_count.toLocaleString()}`;
 
+          const en_old_message = `Token count for model (${oldData.ai.model_use_name}) for user (${user.firstname} ${user.lastname}) ${oldData.token_count.toLocaleString()}`;
+          const en_new_message = `Token count for model (${oldData.ai.model_use_name}) for user (${user.firstname} ${user.lastname}) ${newData.token_count.toLocaleString()}`;
+
+          // ภาษาไทย
           await auditLog({
             ctx,
+            locale: "th",
             log_type: "PERSONAL",
-            old_data: old_message,
-            new_data: new_message,
+            old_data: th_old_message,
+            new_data: th_new_message,
+            old_status: null,
+            new_status: null,
+          });
+
+          // ภาษาอังกฤษ
+          await auditLog({
+            ctx,
+            locale: "en",
+            log_type: "PERSONAL",
+            old_data: en_old_message,
+            new_data: en_new_message,
             old_status: null,
             new_status: null,
           });
 
           await notifyUser({
+            locale: "th",
+            recipient_locale: user.locale,
+            loginAt: user.loginAt,
             userId: id,
             title: "เเจ้งเตือนตั้งค่า Model ของผู้ใช้งาน",
             message: `จำนวน Token ของ Model (${oldData.ai.model_use_name}) จาก ${oldData.token_count.toLocaleString()} เป็น ${newData.token_count.toLocaleString()}`,
+            type: "INFO",
+            to: user.email,
+          });
+
+          await notifyUser({
+            locale: "en",
+            recipient_locale: user.locale,
+            loginAt: user.loginAt,
+            userId: id,
+            title: "User Model Settings Notification",
+            message: `Token count for model (${oldData.ai.model_use_name}) has been changed from ${oldData.token_count.toLocaleString()} to ${newData.token_count.toLocaleString()}.`,
             type: "INFO",
             to: user.email,
           });
@@ -492,7 +612,7 @@ exports.updateUser = async (id, input, ctx) => {
         {
           model: User_role,
           as: "user_role",
-          include: [{ model: Role, as: "role", attributes: ["role_name"] }],
+          include: [{ model: Role, as: "role", attributes: ["role_name_th", "role_name_en"] }],
         },
         {
           model: User_ai,
@@ -511,16 +631,61 @@ exports.updateUser = async (id, input, ctx) => {
   });
 };
 
+exports.updateThemeAndLocale = async (id, input) => {
+  const row = await User.findByPk(id);
+  if (!row) throw new Error(locale === "th" ? "ไม่พบผู้ใช้" : "User not found");
+
+  await row.update(input);
+  return row;
+}
+
 exports.deleteUser = async (id) => {
   const count = await User.destroy({ where: { id } });
   return count > 0;
 };
+
+// ✅ helper: ใช้เรียก ONESQA และถ้า ONESQA "ล่มจริง" ให้ throw ตามที่ต้องการ
+const ONESQA_TIMEOUT = 10000;
+
+const isOnesqaDownError = (err) => {
+  const status = err?.response?.status;
+
+  // ไม่มี response = network/timeout/DNS/ECONNREFUSED ฯลฯ
+  if (!err?.response) return true;
+
+  // 5xx = ฝั่ง ONESQA มีปัญหา
+  if (typeof status === "number" && status >= 500) return true;
+
+  return false;
+};
+
+async function onesqaPost(endpoint, data, headers) {
+  try {
+    return await axios.post(`${process.env.ONESQA_URL}${endpoint}`, data, {
+      headers,
+      timeout: ONESQA_TIMEOUT,
+    });
+  } catch (err) {
+    if (isOnesqaDownError(err)) {
+      throw new Error(
+        locale === "th"
+          ? "ระบบ ONESQA ไม่พร้อมใช้งาน"
+          : "ONESQA system is unavailable"
+      );
+    }
+    // ✅ 4xx หรือ error อื่น ๆ ให้คง behavior เดิม (throw ต่อไป)
+    throw err;
+  }
+}
 
 exports.syncUsersFromApi = async () => {
   let staffApiCount = 0;
   let assessorApiCount = 0;
 
   const SPECIAL_ID = "Admin01";
+
+  const officerRoleName = "เจ้าหน้าที่";
+
   const assessorGroupName = "กลุ่มผู้ประเมินภายนอก";
   const assessorRoleName = "ผู้ประเมินภายนอก";
 
@@ -531,14 +696,14 @@ exports.syncUsersFromApi = async () => {
   };
 
   const existingGroups = await Group.findAll({
-    attributes: ["id", "group_api_id", "name"],
+    attributes: ["id", "group_api_id", "name", "status"],
     where: { group_api_id: { [Op.ne]: null } },
     raw: true,
   });
   // ✅ หา group เพื่อดึง group_ai (init_token)
   const assessorGroup = await Group.findOne({
     where: { name: assessorGroupName },
-    attributes: ["id", "name"],
+    attributes: ["id", "name", "status"],
     raw: true,
   });
   const assessorGroupAis = await Group_ai.findAll({
@@ -552,10 +717,11 @@ exports.syncUsersFromApi = async () => {
   // -------------------------------
   const length = 1000;
 
-  const first = await axios.post(
-    `${process.env.ONESQA_URL}/assessments/get_assessor`,
+  // ✅ REPLACE: axios.post -> onesqaPost
+  const first = await onesqaPost(
+    "/assessments/get_assessor",
     { start: "0", length: String(length) },
-    { headers }
+    headers
   );
 
   const total = Number(first.data?.total ?? 0);
@@ -566,10 +732,12 @@ exports.syncUsersFromApi = async () => {
 
   for (let page = 1; page < pages; page++) {
     const start = page * length;
-    const res = await axios.post(
-      `${process.env.ONESQA_URL}/assessments/get_assessor`,
+
+    // ✅ REPLACE: axios.post -> onesqaPost
+    const res = await onesqaPost(
+      "/assessments/get_assessor",
       { start: String(start), length: String(length) },
-      { headers }
+      headers
     );
     const items = Array.isArray(res.data?.data) ? res.data.data : [];
     assessors.push(...items);
@@ -613,7 +781,11 @@ exports.syncUsersFromApi = async () => {
   //     โดยใช้ id_card เทียบกับ username ใน DB
   // ----------------------------------------------------
   if (!assessorGroup || !assessorGroup.id) {
-    throw new Error(`ไม่พบ assessor group: ${assessorGroupName}`);
+    throw new Error(
+      locale === "th"
+        ? `ไม่พบ assessor group: ${assessorGroupName}`
+        : `Assessor group not found: ${assessorGroupName}`
+    );
   }
 
   if (assessorGroupAis?.length) {
@@ -656,11 +828,11 @@ exports.syncUsersFromApi = async () => {
     });
     if (!groupAis?.length) continue;
 
-    // 3.2) ดึง user ของ group จาก API
-    const response = await axios.post(
-      `${process.env.ONESQA_URL}/basics/get_user`,
+    // ✅ REPLACE: axios.post -> onesqaPost
+    const response = await onesqaPost(
+      "/basics/get_user",
       { group_id: String(g.group_api_id) },
-      { headers }
+      headers
     );
 
     const users = Array.isArray(response.data?.data) ? response.data.data : [];
@@ -698,7 +870,7 @@ exports.syncUsersFromApi = async () => {
     new Set([...dbUsedByAiId.keys(), ...apiAddByAiId.keys()])
   );
 
-  if (aiIds.length === 0) return; // ไม่มีอะไรต้องเช็ค
+  //if (aiIds.length === 0) return; // ไม่มีอะไรต้องเช็ค
 
   const ais = await Ai.findAll({
     where: { id: { [Op.in]: aiIds } },
@@ -736,20 +908,24 @@ exports.syncUsersFromApi = async () => {
     }
   }
   if (exceeded.length > 0) {
-    throw new Error("โควตา token ของ AI ไม่พอ");
+    throw new Error(locale === "th" ? "โควตา token ของ AI ไม่พอ" : "AI token quota is insufficient");
   }
 
   // ส่วนของข้อมูล เจ้าหน้าที่
   try {
     // ✅ หา role_id ของ "เจ้าหน้าที่" ก่อน (ทำครั้งเดียว)
     const officerRole = await Role.findOne({
-      where: { role_name: "เจ้าหน้าที่" },
+      where: { role_name_th: officerRoleName },
       attributes: ["id"],
       raw: true,
     });
 
     if (!officerRole?.id) {
-      throw new Error('❌ ไม่พบ Role ที่ role_name === "เจ้าหน้าที่"');
+      throw new Error(
+        locale === "th"
+          ? 'ไม่พบ Role ที่ role_name === "เจ้าหน้าที่"'
+          : 'Role not found where role_name === "officer"'
+      );
     }
     const officerRoleId = officerRole.id;
 
@@ -768,10 +944,11 @@ exports.syncUsersFromApi = async () => {
           raw: true,
         });
 
-        const response = await axios.post(
-          `${process.env.ONESQA_URL}/basics/get_user`,
+        // ✅ REPLACE: axios.post -> onesqaPost
+        const response = await onesqaPost(
+          "/basics/get_user",
           { group_id: String(g.group_api_id) },
-          { headers }
+          headers
         );
 
         const users = Array.isArray(response.data?.data) ? response.data.data : [];
@@ -833,6 +1010,7 @@ exports.syncUsersFromApi = async () => {
               phone: apiUser?.phone ?? "",
               position: apiUser?.position ?? "",
               group_name: g.name,
+              ai_access: g.status,
               login_type: "NORMAL",
             };
 
@@ -926,10 +1104,10 @@ exports.syncUsersFromApi = async () => {
           }
         });
       } catch (err) {
-        console.error(
-          `❌ group_api_id=${g.group_api_id} (${g.name}) error:`,
-          err.message
-        );
+        // ✅ ถ้า ONESQA ล่ม -> ต้อง throw ออกไปทันที
+        if (err?.message === "ระบบ ONESQA ไม่พร้อมใช้งาน") throw err;
+
+        console.error(`❌ group_api_id=${g.group_api_id} (${g.name}) error:`, err.message);
         if (err.response) console.error("response data:", err.response.data);
       }
     }
@@ -943,6 +1121,9 @@ exports.syncUsersFromApi = async () => {
       userAiCreated,
     });
   } catch (err) {
+    // ✅ ถ้า ONESQA ล่ม -> ต้อง throw ออกไปทันที
+    if (err?.message === "ระบบ ONESQA ไม่พร้อมใช้งาน") throw err;
+
     console.error("❌ main error:", err.message);
     if (err.response) console.error("response data:", err.response.data);
   }
@@ -957,7 +1138,7 @@ exports.syncUsersFromApi = async () => {
 
     // ✅ หา role_id ของ "ผู้ประเมินภายนอก"
     const assessorRole = await Role.findOne({
-      where: { role_name: assessorRoleName },
+      where: { role_name_th: assessorRoleName },
       attributes: ["id"],
       raw: true,
     });
@@ -1037,6 +1218,7 @@ exports.syncUsersFromApi = async () => {
           email: a?.email ?? "",
           phone: a?.tel ?? "",
           group_name: assessorGroupName,
+          ai_access: assessorGroup?.status,
           login_type: "INSPEC", // ถ้าต้องการแยกผู้ประเมินเป็น INSPEC เปลี่ยนเป็น "INSPEC"
           position: "",
         };
@@ -1133,6 +1315,9 @@ exports.syncUsersFromApi = async () => {
       userAiCreated,
     });
   } catch (err) {
+    // ✅ ถ้า ONESQA ล่ม -> ต้อง throw ออกไปทันที
+    if (err?.message === "ระบบ ONESQA ไม่พร้อมใช้งาน") throw err;
+
     console.error("❌ assessor sync error:", err.message);
     if (err.response) console.error("response data:", err.response.data);
   }

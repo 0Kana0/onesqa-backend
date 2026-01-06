@@ -22,6 +22,7 @@ module.exports = {
       return await AuthController.refreshToken(ctx)
     },
     logout: async (_parent, _a, ctx) => {
+      requireAuth(ctx); // ต้องล็อกอินก่อน
       return await AuthController.logout(ctx)
     },
   },

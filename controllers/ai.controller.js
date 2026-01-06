@@ -4,6 +4,7 @@ const db = require('../db/models'); // หรือ '../../db/models' ถ้า�
 const { Ai, Chat, Message, User, User_role, User_ai, Group, Group_ai, User_token } = db;
 const { auditLog } = require('../utils/auditLog'); // ปรับ path ให้ตรง
 const { notifyUser } = require("../utils/notifier"); // ที่ไฟล์ service/controller ของคุณ
+const { getLocale, getCurrentUser } = require("../utils/currentUser");
 const moment = require('moment-timezone');
 
 /**
@@ -88,15 +89,18 @@ exports.getAiById = async (id) => {
 /**
  * สร้าง Ai ใหม่ + map ไปยัง User_ai และ Group_ai ให้ทุก user / group
  */
-exports.createAi = async (input) => {
+exports.createAi = async (input, ctx) => {
   // ใช้ transaction เพื่อให้ทุกอย่างสำเร็จหรือพังพร้อมกัน
   return await db.sequelize.transaction(async (t) => {
+
+    const locale = await getLocale(ctx);
+
     // 1) validation เดิม
     if (input.token_count < 0) {
-      throw new Error("token_count ต้องมากกว่า 0");
+      throw new Error(locale === "th" ? "token_count ต้องมากกว่า 0" : "token_count must be greater than 0");
     }
     if (input.token_all < 0) {
-      throw new Error("token_all ต้องมากกว่า 0");
+      throw new Error(locale === "th" ? "token_all ต้องมากกว่า 0" : "token_all must be greater than 0");
     }
 
     // ชื่อ model ห้ามซ้ำ
@@ -104,7 +108,7 @@ exports.createAi = async (input) => {
       where: { model_name: input.model_name },
       transaction: t,
     });
-    if (exists) throw new Error("model_name already exists");
+    if (exists) throw new Error(locale === "th" ? "มี model_name นี้อยู่แล้ว" : "model_name already exists");
 
     // 2) สร้าง Ai ใหม่
     const ai = await Ai.create(input, { transaction: t });
@@ -155,21 +159,28 @@ exports.createAi = async (input) => {
 };
 
 exports.updateAi = async (id, input, ctx) => {
+
+  const locale = await getLocale(ctx);
+
   const row = await Ai.findByPk(id);
-  if (!row) throw new Error('Ai not found');
+  if (!row) throw new Error(locale === "th" ? "ไม่พบข้อมูล AI" : "AI not found");
 
   // ✅ validate ค่า token
   if (input?.token_count != null && input.token_count < 0) {
-    throw new Error('token_count ต้องมากกว่า 0');
+    throw new Error(locale === "th" ? "token_count ต้องมากกว่า 0" : "token_count must be greater than 0");
   }
   if (input?.token_all != null && input.token_all < 0) {
-    throw new Error('token_all ต้องมากกว่า 0');
+    throw new Error(locale === "th" ? "token_all ต้องมากกว่า 0" : "token_all must be greater than 0");
   }
 
   // ✅ ไม่ให้ลด token ลง
-  if (input?.token_count != null && input.token_count < row.token_count) {
-    throw new Error('จำนวน token ไม่สามารถเเก้ไขให้ลดลงได้');
-  }
+  // if (input?.token_count != null && input.token_count < row.token_count) {
+  //   throw new Error(
+  //     locale === "th"
+  //       ? "จำนวน token ไม่สามารถแก้ไขให้ลดลงได้"
+  //       : "Token amount cannot be reduced"
+  //   );
+  // }
 
   console.log("row", row);
   console.log("input", input);
@@ -185,34 +196,71 @@ exports.updateAi = async (id, input, ctx) => {
 
   //ถ้ามีการเปลี่ยนเเปลงสถานะ ให้ทำการเก็บ log ไว้
   if (isStatusChanged) {
-    const message = `กำหนด AI Access (${row.model_use_name})`;
+    const th_message = `กำหนด AI Access (${row.model_use_name})`;
+    const en_message = `Set AI Access (${row.model_use_name})`;
 
+    // ภาษาไทย
     await auditLog({
       ctx,
+      locale: "th",
       log_type: 'MODEL',
-      old_data: message,
-      new_data: message,
+      old_data: th_message,
+      new_data: th_message,
       old_status: row.activity,
       new_status: input?.activity,
     });
 
-    const toThaiApproval = (val) => {
+    // ภาษาอังกฤษ
+    await auditLog({
+      ctx,
+      locale: "en",
+      log_type: 'MODEL',
+      old_data: en_message,
+      new_data: en_message,
+      old_status: row.activity,
+      new_status: input?.activity,
+    });
+
+    const toBool = (val) => {
       if (typeof val === "string")
         return ["true", "1", "yes", "y"].includes(val.toLowerCase());
       if (typeof val === "number") return val === 1;
       return !!val;
     };
-    const label = (val) => (toThaiApproval(val) ? "อนุมัติ" : "ไม่อนุมัติ");
+
+    const thLabel = (val) => (toBool(val) ? "อนุมัติ" : "ไม่อนุมัติ");
+    const enLabel = (val) => (toBool(val) ? "Active" : "Inactive");
 
     // เเจ้งเตือน user ทั้งหมด
     const allUsers = await User.findAll({
-      attributes: ["id", "email"],
+      attributes: ["id", "email", "locale", "loginAt"],
     });
+
     for (const all of allUsers) {
+      // ภาษาไทย
       await notifyUser({
+        locale: "th",
+        recipient_locale: all.locale,
+        loginAt: all.loginAt,
         userId: all.id,
         title: "เเจ้งเตือนตั้งค่า Model ของระบบ",
-        message: `กำหนด AI Activity ของ Model (${row.model_use_name}) จาก ${label(row.activity)} เป็น ${label(input?.activity)}`,
+        message: `กำหนด AI Activity ของ Model (${row.model_use_name}) จาก ${thLabel(
+          row.activity
+        )} เป็น ${thLabel(input?.activity)}`,
+        type: "INFO",
+        to: all.email,
+      });
+
+      // ภาษาอังกฤษ (ใช้ Active / Inactive)
+      await notifyUser({
+        locale: "en",
+        recipient_locale: all.locale,
+        loginAt: all.loginAt,
+        userId: all.id,
+        title: "System Model Settings Notification",
+        message: `AI Activity for model (${row.model_use_name}) has been changed from ${enLabel(
+          row.activity
+        )} to ${enLabel(input?.activity)}.`,
         type: "INFO",
         to: all.email,
       });
@@ -221,21 +269,37 @@ exports.updateAi = async (id, input, ctx) => {
 
   //ถ้ามีการเปลี่ยนเเปลงจำนวน token ให้ทำการเก็บ log ไว้ + reset is_notification
   if (isTokenChanged) {
-    const old_message = `จำนวน Token ของ Model (${row.model_use_name}) ${row.token_count.toLocaleString()}`;
-    const new_message = `จำนวน Token ของ Model (${row.model_use_name}) ${input.token_count.toLocaleString()}`;
+    const th_old_message = `จำนวน Token ของ Model (${row.model_use_name}) ${row.token_count.toLocaleString()}`;
+    const th_new_message = `จำนวน Token ของ Model (${row.model_use_name}) ${input.token_count.toLocaleString()}`;
 
+    const en_old_message = `Token count for model (${row.model_use_name}) ${row.token_count.toLocaleString()}`;
+    const en_new_message = `Token count for model (${row.model_use_name}) ${input.token_count.toLocaleString()}`;
+
+    // ภาษาไทย
     await auditLog({
       ctx,
+      locale: "th",
       log_type: 'MODEL',
-      old_data: old_message,
-      new_data: new_message,
+      old_data: th_old_message,
+      new_data: th_new_message,
+      old_status: null,
+      new_status: null,
+    });
+
+    // ภาษาอังกฤษ
+    await auditLog({
+      ctx,
+      locale: "en",
+      log_type: 'MODEL',
+      old_data: en_old_message,
+      new_data: en_new_message,
       old_status: null,
       new_status: null,
     });
 
     // เเจ้งเตือนเฉพาะ admin
     const adminUsers = await User.findAll({
-      attributes: ["id", "email"],
+      attributes: ["id", "email", "locale", "loginAt"],
       include: [
         {
           model: User_role,
@@ -248,10 +312,26 @@ exports.updateAi = async (id, input, ctx) => {
       ],
     });
     for (const admin of adminUsers) {
+      // ภาษาไทย
       await notifyUser({
+        locale: "th",
+        recipient_locale: admin.locale,
+        loginAt: admin.loginAt,
         userId: admin.id,
         title: "เเจ้งเตือนตั้งค่า Model ของระบบ",
         message: `จำนวน Token ของ Model (${row.model_use_name}) จาก ${row.token_count.toLocaleString()} เป็น ${input.token_count.toLocaleString()}`,
+        type: "INFO",
+        to: admin.email,
+      });
+
+      // ภาษาอังกฤษ
+      await notifyUser({
+        locale: "en",
+        recipient_locale: admin.locale,
+        loginAt: admin.loginAt,
+        userId: admin.id,
+        title: "System Model Settings Notification",
+        message: `Token count for model (${row.model_use_name}) has been changed from ${row.token_count.toLocaleString()} to ${input.token_count.toLocaleString()}.`,
         type: "INFO",
         to: admin.email,
       });

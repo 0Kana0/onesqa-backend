@@ -3,6 +3,7 @@ const { Op } = require('sequelize');
 const db = require('../db/models'); // หรือ '../../db/models' ถ้าโปรเจกต์คุณใช้ path นั้น
 const { Chatgroup, Chat } = db;
 const { encodeCursor, decodeCursor } = require('../utils/cursor');
+const { getLocale, getCurrentUser } = require("../utils/currentUser");
 
 exports.listChatgroups = async (
   id,
@@ -93,9 +94,12 @@ exports.createChatgroup = async (input) => {
   return await Chatgroup.create(input);
 }
 
-exports.updateChatgroup = async (id, input) => {
+exports.updateChatgroup = async (id, input, ctx) => {
+
+  const locale = await getLocale(ctx);
+
   const row = await Chatgroup.findByPk(id);
-  if (!row) throw new Error('Chatgroup not found');
+  if (!row) throw new Error(locale === "th" ? "ไม่พบกลุ่มแชต" : "Chatgroup not found");
 
   await row.update(input);
   return row;

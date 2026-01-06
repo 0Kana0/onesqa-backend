@@ -16,8 +16,8 @@ module.exports = {
         updatedAt: now,
       },
       {
-        model_name: 'gemini-2.5-flash',
-        //model_name: 'gemini-2.5-pro',
+        //model_name: 'gemini-2.5-flash',
+        model_name: 'gemini-2.5-pro',
         model_use_name: 'Gemini 2.5 Pro',
         model_type: 'gemini',
         token_count: 1500000000,

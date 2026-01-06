@@ -10,7 +10,7 @@ module.exports = `
     id: ID!
     prompt_title: String!
     prompt_detail: String!
-    locale: localeMode!
+    locale: localeMode
     createdAt: DateTime!
     updatedAt: DateTime!
   }
@@ -22,7 +22,7 @@ module.exports = `
   }
 
   extend type Query {
-    prompts: [Prompt!]!
+    prompts(locale: localeMode): [Prompt!]!
     prompt(id: ID!): Prompt
   }
 

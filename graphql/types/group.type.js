@@ -77,6 +77,7 @@ module.exports = `
   extend type Query {
     groups(page: Int, pageSize: Int, where: GroupFilterInput): GroupPage!
     group(id: ID!): Group
+    groupByName(name: String!): Group
   }
 
   extend type Mutation {

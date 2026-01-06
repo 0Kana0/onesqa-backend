@@ -2,41 +2,71 @@ const { Op } = require('sequelize');
 const db = require('../db/models'); // หรือ '../../db/models' ถ้าโปรเจกต์คุณใช้ path นั้น
 const { Prompt } = db;
 const { auditLog } = require('../utils/auditLog'); // ปรับ path ให้ตรง
+const { getLocale, getCurrentUser } = require("../utils/currentUser");
 
-exports.listPrompts = async () => {
+exports.listPrompts = async (locale) => {
+  const where = {};
+
+  if (locale) {
+    where.locale = locale;
+  }
+
   return await Prompt.findAll({
-    order: [['id', 'ASC']],
+    where,
+    order: [["id", "ASC"]],
   });
-}
+};
 
 exports.getPromptById = async (id) => {
   return await Prompt.findByPk(id);
 }
 
 exports.createPrompt = async (input, ctx) => {
+  
+  const locale = await getLocale(ctx);
+  
   const findTitle = await Prompt.findOne({
     where: { prompt_title: input.prompt_title }
   })
-  if (findTitle) throw new Error('หัวข้อ Prompt ห้ามซ้ำกัน');
+  if (findTitle) throw new Error(locale === "th" ? "หัวข้อ Prompt ห้ามซ้ำกัน" : "Prompt title must be unique");
 
-  const message = `เพิ่มข้อมูล: หัวข้อ Prompt: ${input.prompt_title} รายละเอียด Prompt: ${input.prompt_detail}`;
+  const th_message = `เพิ่มข้อมูล: หัวข้อ Prompt: ${input.prompt_title} รายละเอียด Prompt: ${input.prompt_detail}`;
+  const en_message = `Added: Prompt title: ${input.prompt_title} Prompt details: ${input.prompt_detail}`;
 
+  // ภาษาไทย
   await auditLog({
     ctx,
-    log_type: 'PROMPT',
+    locale: "th",
+    log_type: "PROMPT",
     old_data: "-",
-    new_data: message,
+    new_data: th_message,
     old_status: null,
     new_status: null,
   });
 
+  // ภาษาอังกฤษ
+  await auditLog({
+    ctx,
+    locale: "en",
+    log_type: "PROMPT",
+    old_data: "-",
+    new_data: en_message,
+    old_status: null,
+    new_status: null,
+  });
+
+  console.log(input);
+  
   // validation อื่น ๆ เช่น ชื่อห้ามซ้ำ:
   return await Prompt.create(input);
 }
 
 exports.updatePrompt = async (id, input, ctx) => {
+
+  const locale = await getLocale(ctx);
+
   const row = await Prompt.findByPk(id);
-  if (!row) throw new Error('Prompt not found');
+  if (!row) throw new Error(locale === "th" ? "ไม่พบข้อมูล Prompt" : "Prompt not found");
 
   const findTitle = await Prompt.findOne({
     where: {
@@ -47,7 +77,7 @@ exports.updatePrompt = async (id, input, ctx) => {
     },
   });
   if (findTitle) {
-    throw new Error("หัวข้อ Prompt ห้ามซ้ำกัน");
+    throw new Error(locale === "th" ? "หัวข้อ Prompt ห้ามซ้ำกัน" : "Prompt title must be unique");
   }
 
   console.log(row.prompt_detail);
@@ -55,14 +85,30 @@ exports.updatePrompt = async (id, input, ctx) => {
 
   // ถ้ามีการเปลี่ยนเเปลงสถานะ ให้ทำการเก็บ log ไว้
   if (row.prompt_title !== input.prompt_title || row.prompt_detail !== input.prompt_detail) {
-    const old_message = `ข้อมูลเดิม: หัวข้อ Prompt: ${row.prompt_title} รายละเอียด Prompt: ${row.prompt_detail}`;
-    const new_message = `ข้อมูลใหม่: หัวข้อ Prompt: ${input.prompt_title} รายละเอียด Prompt: ${input.prompt_detail}`;
+    const th_old_message = `ข้อมูลเดิม: หัวข้อ Prompt: ${row.prompt_title} รายละเอียด Prompt: ${row.prompt_detail}`;
+    const th_new_message = `ข้อมูลใหม่: หัวข้อ Prompt: ${input.prompt_title} รายละเอียด Prompt: ${input.prompt_detail}`;
 
+    const en_old_message = `Previous: Prompt title: ${row.prompt_title} Prompt details: ${row.prompt_detail}`;
+    const en_new_message = `Updated: Prompt title: ${input.prompt_title} Prompt details: ${input.prompt_detail}`;
+
+    // ภาษาไทย
     await auditLog({
       ctx,
-      log_type: 'PROMPT',
-      old_data: old_message,
-      new_data: new_message,
+      locale: "th",
+      log_type: "PROMPT",
+      old_data: th_old_message,
+      new_data: th_new_message,
+      old_status: null,
+      new_status: null,
+    });
+
+    // ภาษาอังกฤษ
+    await auditLog({
+      ctx,
+      locale: "en",
+      log_type: "PROMPT",
+      old_data: en_old_message,
+      new_data: en_new_message,
       old_status: null,
       new_status: null,
     });
@@ -74,14 +120,28 @@ exports.updatePrompt = async (id, input, ctx) => {
 
 exports.deletePrompt = async (id, ctx) => {
   const row = await Prompt.findByPk(id);
-  if (!row) throw new Error('Prompt not found');
+  if (!row) throw new Error(locale === "th" ? "ไม่พบข้อมูล Prompt" : "Prompt not found");
 
-  const message = `ลบข้อมูล: หัวข้อ Prompt: ${row.prompt_title} รายละเอียด Prompt: ${row.prompt_detail}`;
+  const th_message = `ลบข้อมูล: หัวข้อ Prompt: ${row.prompt_title} รายละเอียด Prompt: ${row.prompt_detail}`;
+  const en_message = `Deleted: Prompt title: ${row.prompt_title} Prompt details: ${row.prompt_detail}`;
 
+  // ภาษาไทย
   await auditLog({
     ctx,
-    log_type: 'PROMPT',
-    old_data: message,
+    locale: "th",
+    log_type: "PROMPT",
+    old_data: th_message,
+    new_data: "-",
+    old_status: null,
+    new_status: null,
+  });
+
+  // ภาษาอังกฤษ
+  await auditLog({
+    ctx,
+    locale: "en",
+    log_type: "PROMPT",
+    old_data: en_message,
     new_data: "-",
     old_status: null,
     new_status: null,

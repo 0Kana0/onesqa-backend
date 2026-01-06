@@ -17,6 +17,10 @@ module.exports = {
 			requireAuth(ctx); // ต้องล็อกอินก่อน
 			return await UserController.updateUser(id, input, ctx);
 		},
+    updateThemeAndLocale: async (_parent, { id, input }, ctx) => {
+			requireAuth(ctx); // ต้องล็อกอินก่อน
+			return await UserController.updateThemeAndLocale(id, input);
+		},
 		deleteUser: async (_parent, { id }, ctx) => {
 			//requireAuth(ctx); // ต้องล็อกอินก่อน
 			return await UserController.deleteUser(id);

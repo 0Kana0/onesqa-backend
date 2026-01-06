@@ -4,6 +4,8 @@ const db = require("../db/models"); // หรือ '../../db/models' ถ้า�
 const { Ai, User_ai, User, User_role } = db;
 const { calcPercent } = require("./checkTokenQuota"); 
 const { notifyUser } = require("./notifier"); // ที่ไฟล์ service/controller ของคุณ
+const { getLocale, getCurrentUser } = require("../utils/currentUser");
+
 // ↑ ถ้า util calcPercent อยู่ไฟล์อื่น / ชื่ออื่น ปรับ path ตามจริง
 
 /**
@@ -18,13 +20,21 @@ const { notifyUser } = require("./notifier"); // ที่ไฟล์ service/c
  * @returns {Promise<{ percentAi: number, percentUserAi: number }>}
  */
 async function updateTokenAndNotify({
+  ctx,
   chatOne,
   usedTokens,
   thresholdPercent = 15,
   transaction,
 }) {
+
+  const locale = await getLocale(ctx);
+
   if (!chatOne?.ai?.id || !chatOne?.user_id) {
-    throw new Error("chatOne ไม่ครบ ai.id หรือ user_id");
+    throw new Error(
+      locale === "th"
+        ? "chatOne ไม่ครบ ai.id หรือ user_id"
+        : "chatOne is missing ai.id or user_id"
+    );
   }
 
   const aiId = chatOne.ai.id;
@@ -78,7 +88,11 @@ async function updateTokenAndNotify({
   const updatedUserAi = await User_ai.findOne(findUserAiOptions);
 
   if (!updatedAi || !updatedUserAi) {
-    throw new Error("ไม่พบข้อมูล token หลังอัปเดต");
+    throw new Error(
+      locale === "th"
+        ? "ไม่พบข้อมูล token หลังอัปเดต"
+        : "Token data not found after update"
+    );
   }
 
   // -------------------------
@@ -98,7 +112,7 @@ async function updateTokenAndNotify({
   // -------------------------
   if (percentAi < thresholdPercent && updatedAi?.is_notification === false) {
     const adminFindOptions = {
-      attributes: ["id", "email"],
+      attributes: ["id", "email", "locale", "loginAt"],
       include: [
         {
           model: User_role,
@@ -115,10 +129,27 @@ async function updateTokenAndNotify({
     const adminUsers = await User.findAll(adminFindOptions);
 
     for (const admin of adminUsers) {
+      // ภาษาไทย
       await notifyUser({
+        locale: "th",
+        recipient_locale: admin.locale,
+        loginAt: admin.loginAt,
         userId: admin.id,
         title: "การใช้งาน Token เกินกำหนดของระบบ",
         message: `การใช้งาน Token ของ Model ${chatOne?.ai?.model_use_name} อยู่ที่ 85% กรุณาติดตามการใช้งานอย่างใกล้ชิด`,
+        type: "WARNING",
+        to: admin.email,
+        transaction,
+      });
+
+      // ภาษาอังกฤษ
+      await notifyUser({
+        locale: "en",
+        recipient_locale: admin.locale,
+        loginAt: admin.loginAt,
+        userId: admin.id,
+        title: "System Token Usage Limit Warning",
+        message: `Token usage for model ${chatOne?.ai?.model_use_name} has reached 85%. Please monitor usage closely.`,
         type: "WARNING",
         to: admin.email,
         transaction,
@@ -143,10 +174,27 @@ async function updateTokenAndNotify({
     percentUserAi < thresholdPercent &&
     updatedUserAi?.is_notification === false
   ) {
+    // ภาษาไทย
     await notifyUser({
+      locale: "th",
+      recipient_locale: chatOne?.user?.locale,
+      loginAt: chatOne?.user?.loginAt,
       userId,
       title: "การใช้งาน Token เกินกำหนด",
       message: `การใช้งาน Token ของ Model ${chatOne?.ai?.model_use_name} อยู่ที่ 85% กรุณาติดต่อผู้ดูแลระบบ`,
+      type: "WARNING",
+      to: chatOne?.user?.email,
+      transaction,
+    });
+
+    // ภาษาอังกฤษ
+    await notifyUser({
+      locale: "en",
+      recipient_locale: chatOne?.user?.locale,
+      loginAt: chatOne?.user?.loginAt,
+      userId,
+      title: "Token Usage Limit Warning",
+      message: `Token usage for model ${chatOne?.ai?.model_use_name} has reached 85%. Please contact the system administrator.`,
       type: "WARNING",
       to: chatOne?.user?.email,
       transaction,

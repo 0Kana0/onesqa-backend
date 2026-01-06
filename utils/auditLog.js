@@ -26,6 +26,7 @@ function safeToString(v) {
  */
 async function auditLog({
   ctx,
+  locale,
   log_type = 'ALERT',
   old_data = null,
   new_data = null,
@@ -51,6 +52,7 @@ async function auditLog({
     new_data: safeToString(new_data),
     old_status,
     new_status,
+    locale,
   };
 
   try {

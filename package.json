@@ -21,6 +21,7 @@
     "@graphql-tools/schema": "^10.0.25",
     "axios": "^1.12.2",
     "bcrypt": "^6.0.0",
+    "bullmq": "^5.66.4",
     "cookie-parser": "^1.4.7",
     "cors": "^2.8.5",
     "dotenv": "^17.2.2",

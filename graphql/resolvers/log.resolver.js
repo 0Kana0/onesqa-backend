@@ -4,9 +4,9 @@ const { requireAuth } = require('../../utils/authGuard');
 
 module.exports = {
   Query: {
-    logs: async (_parent, { page, pageSize, where }, ctx) => {
+    logs: async (_parent, { locale, page, pageSize, where }, ctx) => {
       requireAuth(ctx);
-      return await LogController.listLogs({ page, pageSize, where });
+      return await LogController.listLogs({ locale, page, pageSize, where });
     },
     log: async (_parent, { id }, ctx) => {
       requireAuth(ctx); // ต้องล็อกอินก่อน
@@ -20,7 +20,7 @@ module.exports = {
     },
     updateLog: async (_parent, { id, input }, ctx) => {
       requireAuth(ctx); // ต้องล็อกอินก่อน
-      return await LogController.updateLog(id, input);
+      return await LogController.updateLog(id, input, ctx);
     },
     deleteLog: async (_parent, { id }, ctx) => {
       requireAuth(ctx); // ต้องล็อกอินก่อน

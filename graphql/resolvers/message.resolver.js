@@ -16,11 +16,11 @@ module.exports = {
   Mutation: {
     createMessage: async (_parent, { input }, ctx) => {
       requireAuth(ctx); // ต้องล็อกอินก่อน
-      return await MessageController.createMessage(input);
+      return await MessageController.createMessage(input, ctx);
     },
     updateMessage: async (_parent, { id, input }, ctx) => {
       requireAuth(ctx); // ต้องล็อกอินก่อน
-      return await MessageController.updateMessage(id, input);
+      return await MessageController.updateMessage(id, input, ctx);
     },
     deleteMessage: async (_parent, { id }, ctx) => {
       requireAuth(ctx); // ต้องล็อกอินก่อน

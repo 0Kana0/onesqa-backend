@@ -2,9 +2,9 @@
 // ใช้ได้กับ Node + Sequelize + GraphQL PubSub + Nodemailer
 // ปรับ path models ให้ตรงโปรเจ็กต์ของคุณ
 const db = require("../db/models"); // <-- ปรับ path ให้ตรงโปรเจกต์ของคุณ
-const { Notification, Setting } = db;
+const { Notification, Setting, User } = db;
 const pubsub = require("../utils/pubsub"); // ✅ ใช้ instance เดียว
-const transporter = require("../config/email-config.js");
+const { enqueueEmail } = require("../services/email.service.js");
 
 /**
  * ส่ง Notification (DB) + ยิง PubSub + ส่งอีเมล (เลือกได้)
@@ -35,6 +35,9 @@ const transporter = require("../config/email-config.js");
  */
 async function notifyUser(opts = {}) {
   const {
+    locale,
+    recipient_locale,
+    loginAt,
     userId,
     title,
     message,
@@ -47,43 +50,77 @@ async function notifyUser(opts = {}) {
     transaction,
   } = opts;
 
-  if (!userId) throw new Error('notifyUser: "userId" is required');
-  if (!title) throw new Error('notifyUser: "title" is required');
-  if (!message) throw new Error('notifyUser: "message" is required');
+  // if (!userId) {
+  //   throw new Error(
+  //     locale === "th"
+  //       ? 'notifyUser: จำเป็นต้องระบุ "userId"'
+  //       : 'notifyUser: "userId" is required'
+  //   );
+  // }
+  // if (!title) {
+  //   throw new Error(
+  //     locale === "th"
+  //       ? 'notifyUser: จำเป็นต้องระบุ "title"'
+  //       : 'notifyUser: "title" is required'
+  //   );
+  // }
+  // if (!message) {
+  //   throw new Error(
+  //     locale === "th"
+  //       ? 'notifyUser: จำเป็นต้องระบุ "message"'
+  //       : 'notifyUser: "message" is required'
+  //   );
+  // }
 
   const setting = await Setting.findAll()
 
-  const notiSetting = setting.find((setting) => (setting.setting_name) === ("การแจ้งเตือนระบบ"));
-  const emailSetting = setting.find((setting) => (setting.setting_name) === ("การแจ้งเตือนทางอีเมล"));
+  const notiSetting = setting.find((setting) => (setting.setting_name_th) === ("การแจ้งเตือนระบบ"));
+  const emailSetting = setting.find((setting) => (setting.setting_name_th) === ("การแจ้งเตือนทางอีเมล"));
 
   //console.log("notiSetting", notiSetting);
   //console.log("emailSetting", emailSetting);
 
-  // 1) บันทึก DB
-  const noti = await Notification.create({
-    user_id: userId,
-    title,
-    message,
-    type,
-  });
+  // เเจ้งเตือนเฉพาะผู้ใช้งานที่เคยเข้าใช้งานระบบ
+  if (loginAt !== null) {
+    // 1) บันทึก DB
+    const noti = await Notification.create({
+      locale,
+      user_id: userId,
+      title,
+      message,
+      type,
+    });
 
-  if (notiSetting.activity === true) {
-    // 2) ยิง PubSub (non-blocking)
-    // ✅ ส่ง event ผ่าน pubsub สำหรับ real-time
-    pubsub.publish("NOTIFICATION_ADDED", { notificationAdded: noti });
-  }
+    if (
+      notiSetting.activity === true && 
+      locale === recipient_locale
+    ) {
+      const editUser = await User.update({
+        alert: true,
+      }, { where: { id: userId } })
+      // 2) ยิง PubSub (non-blocking)
+      // ✅ ส่ง event ผ่าน pubsub สำหรับ real-time
+      pubsub.publish("NOTIFICATION_ADDED", { notificationAdded: noti });
+    }
 
-  if (emailSetting.activity === true && to) {
-    // 3) ส่งอีเมล (optional, non-blocking)
-    try {
-      await transporter.sendMail({
-        from: `<${process.env.EMAIL_USER}>`,
-        to,
-        subject: title,
-        text: message,
-      });
-    } catch (error) {
-      console.log(error);
+    if (
+      emailSetting.activity === true && 
+      to && 
+      locale === recipient_locale
+    ) {
+      // 3) ส่งอีเมล (optional, non-blocking)
+      try {
+        await enqueueEmail({
+          to,
+          subject: subject || title,
+          text: message,
+          // ถ้าจะส่งแบบ html ก็ใส่เพิ่มได้:
+          // html: `<p>${message}</p>`,
+          meta: { userId, locale, type }, // optional ไว้ debug/log
+        });
+      } catch (err) {
+        console.log("enqueueEmail error:", err);
+      }
     }
   }
 }

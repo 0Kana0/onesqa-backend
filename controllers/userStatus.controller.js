@@ -1,6 +1,8 @@
 const pubsub = require("../utils/pubsub"); // ✅ ใช้ instance เดียว
+const { Op } = require("sequelize");
 const db = require("../db/models"); // หรือ '../../db/models' ถ้าโปรเจกต์คุณใช้ path นั้น
-const { User } = db;
+const { User, RefreshToken } = db;
+const moment = require("moment");
 
 // ✅ ดึงเฉพาะผู้ใช้งานที่ออนไลน์อยู่
 exports.onlineUsers = async () => {
@@ -43,15 +45,25 @@ exports.setUserOnline = async (user_id) => {
 
 // ❌ ผู้ใช้ออกจากระบบ / ปิด tab
 exports.setUserOffline = async (user_id) => {
+  // ตรวจสอบว่ามี refreshToken อยู่ใน DB และยังไม่หมดอายุ
+  const existing = await RefreshToken.findAll({
+    where: {
+      user_id: user_id,
+      expiresAt: { [Op.gt]: moment() }, // ยังไม่หมดอายุ
+    },
+  });
+  
   const userStatus = await User.findOne({ where: { id: user_id } });
   if (!userStatus) return null;
 
-  await User.update(
-    {
-      is_online: false,
-    },
-    { where: { id: user_id } }
-  );
+  if (existing.length === 0) {
+    await User.update(
+      {
+        is_online: false,
+      },
+      { where: { id: user_id } }
+    );
+  }
 
   pubsub.publish("USER_STATUS_CHANGED", { userStatusChanged: userStatus });
   return {

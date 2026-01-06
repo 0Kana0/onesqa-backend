@@ -16,7 +16,7 @@ module.exports = {
   Mutation: {
     createChat: async (_parent, { input }, ctx) => {
       requireAuth(ctx); // ต้องล็อกอินก่อน
-      return await ChatController.createChat(input);
+      return await ChatController.createChat(input, ctx);
     },
     updateChat: async (_parent, { id, input }, ctx) => {
       requireAuth(ctx); // ต้องล็อกอินก่อน

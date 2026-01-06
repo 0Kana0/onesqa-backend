@@ -33,6 +33,31 @@ services:
     networks:
       - node-backend
 
+  # ✅ Email Worker (BullMQ)
+  email-worker:
+    image: naterkana/onesqa-backend:0.1
+    container_name: email-worker
+    restart: unless-stopped
+
+    env_file:
+      - .env
+
+    environment:
+      TZ: "Asia/Bangkok"
+
+    volumes:
+      - .:/usr/src/app
+      - /etc/localtime:/etc/localtime:ro
+      - /etc/timezone:/etc/timezone:ro
+
+    command: node /usr/src/app/workers/email.worker.js
+
+    depends_on:
+      - redis
+
+    networks:
+      - node-backend
+
   # ✅ Postgres Database
   postgres:
     image: postgres:15

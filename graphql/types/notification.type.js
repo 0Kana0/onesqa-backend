@@ -1,11 +1,17 @@
 module.exports = `
   scalar DateTime     # 👈 เพิ่มตรงนี้ 
 
+  enum localeMode {
+    th
+    en
+  }
+
   type Notification {
     id: ID!
     title: String!
     message: String!
     type: String!
+    locale: localeMode
     user_id: ID!
     createdAt: DateTime!
     updatedAt: DateTime!
@@ -27,12 +33,13 @@ module.exports = `
     title: String
     message: String
     type: String
+    locale: localeMode
     user_id: ID!
   }
   
   extend type Query {
     # ใช้สำหรับ infinite scroll: เรียกเพิ่มด้วย after = endCursor เดิม
-    myNotifications(first: Int = 20, after: String, user_id: ID!): NotificationConnection!
+    myNotifications(locale: localeMode, first: Int = 20, after: String, user_id: ID!): NotificationConnection!
   }
 
   extend type Mutation {
