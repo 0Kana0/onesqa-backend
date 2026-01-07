@@ -17,6 +17,10 @@ exports.transcribeAudio = async (filePath) => {
     file: fs.createReadStream(filePath),
     model: "gpt-4o-mini-transcribe"
   });
+
+  console.log(r.text);
+  console.log(r.usage); // << เอาไปทำ dashboard/หักโควต้าได้
+
   return r.text || "";
 }
 

@@ -1215,6 +1215,130 @@ exports.updateMessage = async (id, input, ctx) => {
 
     // ถ้าใช้ openai
   } else if (chatOne.ai.model_type === "gpt") {
+    // function สำหรับแปลงไฟล์เป็นข้อมูลสำหรับส่งไป model
+    async function processFiles(fileArray) {
+      const mapped = await Promise.all(
+        fileArray.map(async (filename) => {
+          const ext = path.extname(filename).toLowerCase();
+          const filePath = path.join(__dirname, "../uploads", filename);
+
+          // ---------- รูปภาพ ----------
+          if ([".png", ".jpg", ".jpeg"].includes(ext)) {
+            const mime =
+              ext === ".jpg" ? "image/jpeg" :
+              ext === ".jpeg" ? "image/jpeg" :
+              ext === ".webp" ? "image/webp" : "image/png";
+            const b64 = fs.readFileSync(filePath, { encoding: "base64" });
+
+            return {
+              type: "input_image",
+              image_url: dataUri(mime, b64),
+            };
+          }
+          // ---------- PDF ----------
+          if (ext === ".pdf") {
+            const { text, images } = await extractTextFromPDF(filePath);
+            const parts = [
+              { type: "input_text", text: `นี่คือเนื้อหาจากไฟล์ PDF: ${removeFirstPrefix(filename)}` },
+              { type: "input_text", text: text || "(ไม่พบข้อความใน PDF)" },
+            ];
+
+            // images: [{ data: <base64>, mimeType?: "image/png" }]
+            (images || []).forEach((img) => {
+              const mime = img?.mimeType || "image/png";
+              parts.push({
+                type: "input_image",
+                image_url: dataUri(mime, img.data),
+              });
+            });
+
+            return parts;
+          }
+          // ---------- Word ----------
+          if ([".doc", ".docx"].includes(ext)) {
+            const { text, images } = await extractTextFromWord(filePath);
+            const parts = [
+              { type: "input_text", text: `นี่คือเนื้อหาจากไฟล์ Word: ${removeFirstPrefix(filename)}` },
+              { type: "input_text", text: text || "(ไม่พบข้อความใน Word)" },
+            ];
+
+            // images: [{ base64: <string>, contentType?: "image/png" }]
+            (images || []).forEach((img) => {
+              const mime = img?.contentType || "image/png";
+              parts.push({
+                type: "input_image",
+                image_url: dataUri(mime, img.base64),
+              });
+            });
+
+            return parts;
+          }
+          // ---------- Excel ----------
+          if ([".xlsx", ".xls"].includes(ext)) {
+            const { text, images } = await extractTextFromExcel(filePath);
+            const parts = [
+              { type: "input_text", text: `นี่คือเนื้อหาจากไฟล์ Excel: ${removeFirstPrefix(filename)}` },
+              { type: "input_text", text: text || "(ไม่พบข้อความใน Excel)" },
+            ];
+
+            // images: [{ base64: <string>, mimeType?: "image/png" }]
+            (images || []).forEach((img) => {
+              const mime = img?.mimeType || "image/png";
+              parts.push({
+                type: "input_image",
+                image_url: dataUri(mime, img.base64),
+              });
+            });
+
+            return parts;
+          }
+          // ---------- PowerPoint ----------
+          if ([".pptx", ".ppt"].includes(ext)) {
+            const { text, images } = await extractTextFromPowerPoint(filePath);
+            const parts = [
+              { type: "input_text", text: `นี่คือเนื้อหาจากไฟล์ PowerPoint: ${removeFirstPrefix(filename)}` },
+              { type: "input_text", text: text || "(ไม่พบข้อความใน PowerPoint)" },
+            ];
+
+            // images: [{ base64: <string>, contentType?: "image/png" }]
+            (images || []).forEach((img) => {
+              const mime = img?.contentType || "image/png";
+              parts.push({
+                type: "input_image",
+                image_url: dataUri(mime, img.base64),
+              });
+            });
+
+            return parts;
+          }
+          // ---- MP3 (เสียง) ----
+          if (ext === ".mp3") {
+            const filePath = path.join(__dirname, "../uploads", filename);
+            const transcript = await transcribeAudio(filePath);
+            return [
+              { type: "input_text", text: `ถอดเสียงจากไฟล์: ${removeFirstPrefix(filename)}` },
+              { type: "input_text", text: transcript || "(ไม่พบข้อความจากการถอดเสียง)" },
+            ];
+
+          // ---- MP4 (วิดีโอ) ----
+          } if (ext === ".mp4") {
+            const filePath = path.join(__dirname, "../uploads", filename);
+            // ส่งเสียงไปถอดเป็นข้อความได้เลย (mp4 รองรับใน Transcriptions)
+            const transcript = await transcribeAudio(filePath);
+            return [
+              { type: "input_text", text: `สรุปจากวิดีโอ: ${removeFirstPrefix(filename)}` },
+              { type: "input_text", text: transcript || "(ไม่พบข้อความจากการถอดเสียงวิดีโอ)" },
+            ];
+          } 
+
+          // ไม่รองรับ
+          return null;
+        })
+      );
+
+      // flatten + กรอง null
+      return mapped.flat().filter(Boolean);
+    }
 
     // สร้าง array สำหรับเก็บ prompt ที่ผ่านมาโดยมี prompt ตั้งต้น
     // locale: "th" | "en"
@@ -1239,7 +1363,9 @@ exports.updateMessage = async (id, input, ctx) => {
     
     // เก็บ prompt ที่ผ่านมาทั้งหมดใน array
     for (const message of messageAllByChatId) {
-      //const fileParts = await processFiles(chat.file);
+      const file_history = message?.files.map(x => x?.file_name).filter(Boolean);      
+      const fileParts = await processFiles(file_history);
+
       const isAssistant = message.role === "assistant";
       const history = {
         role: message.role,
@@ -1249,20 +1375,20 @@ exports.updateMessage = async (id, input, ctx) => {
             text: message.text,
           },
           // สำหรับส่งไฟล์ไปที่ model
-          //...fileParts
+          ...fileParts
         ],
       };
       historyList.push(history);
     }
 
     // เก็บคำถามล่าสุดที่ถามใน array
-    //const filteredFiles = await processFiles(fileMessageList_name);
+    const filteredFiles = await processFiles(fileMessageList_name);
     const messagePrompt = {
       role: "user",
       content: [
         { type: "input_text", text: message },
         // สำหรับส่งไฟล์ไปที่ model
-        //...filteredFiles
+        ...filteredFiles
       ],
     };
 
@@ -1293,15 +1419,21 @@ exports.updateMessage = async (id, input, ctx) => {
 
     // เก็บคำถามลงใน db
     try {
-      await Message.create({
+      const sendData = await Message.create({
         role: "user",
         text: message,
-        //file: fileMessageList_id,
+        file: fileMessageList_id,
         input_token: 0,
         output_token: 0,
         total_token: 0,
         chat_id: chat_id,
       });
+
+      for (const item of fileMessageList_id) {
+        await File.update({
+          message_id: sendData.id
+        }, {where: {id: item}})
+      }
     } catch (error) {
       console.log(error);
     }
