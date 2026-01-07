@@ -15,7 +15,15 @@ services:
 
     environment:
       NODE_OPTIONS: --max-old-space-size=4096
-      TZ: "Asia/Bangkok"
+      TZ: 'Asia/Bangkok'
+
+    # ✅ ให้แน่ใจว่า mount โฟลเดอร์โปรเจ็กต์ปัจจุบันเข้ามาใน container
+    volumes:
+      - .:/usr/src/app
+      - /etc/localtime:/etc/localtime:ro
+      - /etc/timezone:/etc/timezone:ro
+
+    # ✅ ใช้ path เต็มเพื่อเรียก script
     command: sh /usr/src/app/entrypoint.sh
 
     depends_on:
@@ -36,6 +44,7 @@ services:
 
     environment:
       TZ: "Asia/Bangkok"
+
     command: node /usr/src/app/workers/email.worker.js
 
     depends_on:
