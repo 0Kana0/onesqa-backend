@@ -1,11 +1,26 @@
-FROM node:22-alpine
-
+# ---------- build stage ----------
+FROM node:22-alpine AS build
 WORKDIR /app
 
-COPY package*.json ./
-RUN npm install
+COPY package.json package-lock.json ./
+RUN npm ci
 
 COPY . .
+# ถ้าโปรเจกต์มี build (ถ้าไม่มีให้ลบบรรทัดนี้ออก)
+RUN npm run build
+
+# ---------- runtime stage ----------
+FROM node:22-alpine
+WORKDIR /app
+ENV NODE_ENV=production
+
+COPY package.json package-lock.json ./
+RUN npm ci --omit=dev
+
+# ถ้ามี build output เช่น dist
+COPY --from=build /app/dist ./dist
+# ถ้า worker อยู่ใน src/workers และใช้ตอนรันจริง ให้ copy มาด้วย
+COPY --from=build /app/workers ./workers
 
 EXPOSE 4000
 CMD ["npm", "start"]
