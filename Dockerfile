@@ -6,8 +6,6 @@ COPY package.json package-lock.json ./
 RUN npm ci
 
 COPY . .
-# ถ้าโปรเจกต์มี build (ถ้าไม่มีให้ลบบรรทัดนี้ออก)
-RUN npm run build
 
 # ---------- runtime stage ----------
 FROM node:22-alpine
