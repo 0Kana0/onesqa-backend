@@ -1,5 +1,5 @@
 // workers/email.worker.js
-require("dotenv").config();
+// require("dotenv").config();
 const { Worker } = require("bullmq");
 const connection = require("../function/redis-queue");
 const transporter = require("../config/email-config.js");
