@@ -54,6 +54,18 @@ module.exports = (sequelize, DataTypes) => {
         onDelete: 'CASCADE',
         hooks: true, // ✅ จำเป็นถ้าใช้ paranoid
       });
+      User.hasMany(models.User_daily_active, {
+        foreignKey: 'user_id',
+        as: 'user_daily_active',
+        onDelete: 'CASCADE',
+        hooks: true, // ✅ จำเป็นถ้าใช้ paranoid
+      });
+      User.hasMany(models.User_login_history, {
+        foreignKey: 'user_id',
+        as: 'user_login_history',
+        onDelete: 'CASCADE',
+        hooks: true, // ✅ จำเป็นถ้าใช้ paranoid
+      });
     }
   }
   User.init({

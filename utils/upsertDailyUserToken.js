@@ -38,38 +38,18 @@ function extractTokenDelta(response) {
 async function upsertDailyUserToken({ userId, aiId, response }) {
   // ✅ วันที่ของวันนี้ตาม Asia/Bangkok (เก็บเป็น DATEONLY ได้เลย)
   const usedDate = moment.tz("Asia/Bangkok").format("YYYY-MM-DD");
-
   const { inputDelta, outputDelta, totalDelta } = extractTokenDelta(response);
 
   return await db.sequelize.transaction(async (t) => {
-    // ✅ ล็อกแถว (กัน create ซ้ำถ้ามี request พร้อมกัน)
-    const row = await User_token.findOne({
-      where: { used_date: usedDate, user_id: userId, ai_id: aiId },
-      transaction: t,
-      lock: t.LOCK.UPDATE,
-    });
-
-    if (!row) {
-      // ไม่มีของวันนี้ -> create
-      return await User_token.create(
-        {
-          used_date: usedDate,
-          input_token: inputDelta,
-          output_token: outputDelta,
-          total_token: totalDelta,
-          user_id: userId,
-          ai_id: aiId,
-        },
-        { transaction: t }
-      );
-    }
-
-    // มีแล้ว -> บวกเพิ่ม (เอาค่าเดิมใน db + ค่าใหม่)
-    await row.increment(
+    // ไม่มีของวันนี้ -> create
+    const row = await User_token.create(
       {
+        used_date: usedDate,
         input_token: inputDelta,
         output_token: outputDelta,
         total_token: totalDelta,
+        user_id: userId,
+        ai_id: aiId,
       },
       { transaction: t }
     );

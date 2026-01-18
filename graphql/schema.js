@@ -55,6 +55,12 @@ const groupResolver = require("./resolvers/group.resolver");
 const userCountType = require("./types/user_count.type");
 const userCountResolver = require("./resolvers/user_count.resolver");
 
+const userDailyActiveType = require("./types/user_daily_active.type");
+const userDailyActiveResolver = require("./resolvers/user_daily_active.resolver");
+
+const userLoginHistoryType = require("./types/user_login_history.type");
+const userLoginHistoryResolver = require("./resolvers/user_login_history.resolver");
+
 const typeDefs = [
   baseType, 
   aiType, 
@@ -72,7 +78,9 @@ const typeDefs = [
   fileType,
   promptType,
   groupType,
-  userCountType
+  userCountType,
+  userDailyActiveType,
+  userLoginHistoryType
 ];
 const resolvers = [
   aiResolver, 
@@ -90,7 +98,9 @@ const resolvers = [
   fileResolver,
   promptResolver,
   groupResolver,
-  userCountResolver
+  userCountResolver,
+  userDailyActiveResolver,
+  userLoginHistoryResolver
 ];
 
 const schema = makeExecutableSchema({ typeDefs, resolvers });

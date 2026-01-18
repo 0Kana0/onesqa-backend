@@ -11,7 +11,7 @@ module.exports = function verifyToken(req, res, next) {
     const cookieToken = req.cookies?.accessToken;
 
     const useToken = token || cookieToken;
-    console.log("useToken", useToken);
+    //console.log("useToken", useToken);
     
     if (!useToken) {
       // ไม่มี token ก็ผ่านไป แต่จะไม่มี req.user

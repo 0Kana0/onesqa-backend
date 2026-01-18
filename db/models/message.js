@@ -26,6 +26,10 @@ module.exports = (sequelize, DataTypes) => {
   }
   Message.init({
     role: DataTypes.STRING,
+    message_type: {
+      type: DataTypes.ENUM('TEXT', 'IMAGE', 'VIDEO', "DOC"),
+      allowNull: false,
+    },
     text: DataTypes.TEXT,
     file: DataTypes.JSON,
     input_token: DataTypes.INTEGER,

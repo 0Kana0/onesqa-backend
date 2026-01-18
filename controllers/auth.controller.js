@@ -23,6 +23,7 @@ const db = require("../db/models");
 const { validateGroupInitTokenNotExceedAiTokenCount } = require("../utils/validateGroupInitToken.js");
 const { upsertMonthlyUserCountPlus } = require("../utils/upsertMonthlyUserCountPlus.js");
 const { getLocale } = require("../utils/currentUser.js");
+const { setUserLoginHistory, setUserDailyActive } = require("../utils/userActive.js");
 const { User, RefreshToken, User_role, User_ai, Role, Ai, Group, Group_ai, User_count } = db;
 
 exports.me = async (ctx) => {
@@ -306,6 +307,9 @@ exports.signin = async ({ username, password, locale }, ctx) => {
     maxAge: 7 * 24 * 60 * 60 * 1000,
   });
 
+  setUserLoginHistory(userId, "LOGIN_SUCCESS", ctx)
+  setUserDailyActive(userId, "LOGIN")
+
   return {
     user: {
       id: userId,
@@ -420,6 +424,9 @@ async function signinBackup({ username, password, locale }, ctx, rawErr) {
     path: "/",
     maxAge: 7 * 24 * 60 * 60 * 1000,
   });
+
+  setUserLoginHistory(userId, "LOGIN_SUCCESS", ctx)
+  setUserDailyActive(userId, "LOGIN")
 
   return {
     user: {
@@ -925,6 +932,9 @@ exports.verifySigninWithIdennumber = async ({ idennumber, otp, locale }, ctx) =>
     path: "/",
     maxAge: 7 * 24 * 60 * 60 * 1000,
   });
+
+  setUserLoginHistory(existUser?.id, "LOGIN_SUCCESS", ctx)
+  setUserDailyActive(existUser?.id, "LOGIN")
 
   return {
     user: {

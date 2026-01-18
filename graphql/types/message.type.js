@@ -1,6 +1,13 @@
 module.exports = `
   scalar DateTime     # 👈 เพิ่มตรงนี้
 
+  enum MessageType {
+    TEXT
+    IMAGE
+    VIDEO
+    DOC
+  }
+
   type Files {
     id: ID
     file_name: String
@@ -10,6 +17,7 @@ module.exports = `
   type Message {
     id: ID!
     role: String!
+    message_type: MessageType!
     text: String!
     createdAt: DateTime!
     updatedAt: DateTime!
@@ -22,6 +30,7 @@ module.exports = `
     filename: String
   }
   input MessageInput {
+    message_type: MessageType
     chat_id: ID
     message: String
     locale: String
@@ -35,6 +44,9 @@ module.exports = `
 
   extend type Mutation {
     createMessage(input: MessageInput!): Message!
+    createMessageImage(input: MessageInput!): Message!
+    createMessageVideo(input: MessageInput!): Message!
+    createMessageDoc(input: MessageInput!): Message!
     updateMessage(id: ID!, input: MessageInput!): Message!
     deleteMessage(id: ID!): Boolean!
   }

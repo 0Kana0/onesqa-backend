@@ -1,7 +1,8 @@
 const moment = require("moment-timezone");
-const { Op, fn, col } = require("sequelize");
+const { Op, fn, col, QueryTypes } = require("sequelize"); // ✅ เพิ่ม QueryTypes
 const db = require("../db/models"); // หรือ '../../db/models' ถ้าโปรเจกต์คุณใช้ path นั้น
 const { Group, Ai, User, User_role, Group_ai, User_token, User_ai } = db;
+const sequelize = db.sequelize;
 const { auditLog } = require("../utils/auditLog"); // ปรับ path ให้ตรง
 const { notifyUser } = require("../utils/notifier");
 const { getLocale, getCurrentUser } = require("../utils/currentUser");
@@ -10,15 +11,14 @@ const TZ = "Asia/Bangkok";
 
 exports.listGroups = async ({ page, pageSize, where: filters = {} } = {}) => {
   // =========================
-  // 0) เวลา today / month (TH)
+  // 0) เวลา today / month (TH) — ใช้ used_date
   // =========================
   const nowTH = moment.tz(TZ);
-  const startOfToday = nowTH.clone().startOf("day").toDate();
-  const startOfTomorrow = nowTH.clone().add(1, "day").startOf("day").toDate();
-
   const startOfMonthTH = nowTH.clone().startOf("month");
-  const startOfMonth = startOfMonthTH.toDate();
-  const startOfNextMonth = startOfMonthTH.clone().add(1, "month").toDate();
+
+  const usedDateToday = nowTH.format("YYYY-MM-DD");
+  const startOfMonthStr = startOfMonthTH.format("YYYY-MM-DD");
+  const startOfNextMonthStr = startOfMonthTH.clone().add(1, "month").format("YYYY-MM-DD");
 
   const daysElapsed = nowTH.diff(startOfMonthTH, "days") + 1;
 
@@ -90,7 +90,7 @@ exports.listGroups = async ({ page, pageSize, where: filters = {} } = {}) => {
 
   // =========================
   // 5) รวม token ของทุก user ในกลุ่มนั้น แยกตาม model
-  //    5.1 today/month จาก User_token.total_token
+  //    5.1 today/month จาก User_token.total_token (อิง used_date)
   //    5.2 token_count/token_all จาก User_ai
   // =========================
   const groupNames = [...new Set(rows.map((g) => g?.name).filter(Boolean))];
@@ -105,10 +105,7 @@ exports.listGroups = async ({ page, pageSize, where: filters = {} } = {}) => {
       attributes: [
         [col("user.group_name"), "group_name"],
         [col("ai.model_use_name"), "model_use_name"],
-        [
-          fn("COALESCE", fn("SUM", col("User_token.total_token")), 0),
-          "tokens_today",
-        ],
+        [fn("COALESCE", fn("SUM", col("User_token.total_token")), 0), "tokens_today"],
       ],
       include: [
         {
@@ -121,7 +118,7 @@ exports.listGroups = async ({ page, pageSize, where: filters = {} } = {}) => {
         { model: Ai, as: "ai", attributes: [], required: false },
       ],
       where: {
-        createdAt: { [Op.gte]: startOfToday, [Op.lt]: startOfTomorrow },
+        used_date: usedDateToday,
       },
       group: [col("user.group_name"), col("ai.model_use_name")],
       raw: true,
@@ -132,10 +129,7 @@ exports.listGroups = async ({ page, pageSize, where: filters = {} } = {}) => {
       attributes: [
         [col("user.group_name"), "group_name"],
         [col("ai.model_use_name"), "model_use_name"],
-        [
-          fn("COALESCE", fn("SUM", col("User_token.total_token")), 0),
-          "tokens_month",
-        ],
+        [fn("COALESCE", fn("SUM", col("User_token.total_token")), 0), "tokens_month"],
       ],
       include: [
         {
@@ -148,7 +142,7 @@ exports.listGroups = async ({ page, pageSize, where: filters = {} } = {}) => {
         { model: Ai, as: "ai", attributes: [], required: false },
       ],
       where: {
-        createdAt: { [Op.gte]: startOfMonth, [Op.lt]: startOfNextMonth },
+        used_date: { [Op.gte]: startOfMonthStr, [Op.lt]: startOfNextMonthStr },
       },
       group: [col("user.group_name"), col("ai.model_use_name")],
       raw: true,
@@ -159,14 +153,8 @@ exports.listGroups = async ({ page, pageSize, where: filters = {} } = {}) => {
       attributes: [
         [col("user.group_name"), "group_name"],
         [col("ai.model_use_name"), "model_use_name"],
-        [
-          fn("COALESCE", fn("SUM", col("User_ai.token_count")), 0),
-          "token_count_sum",
-        ],
-        [
-          fn("COALESCE", fn("SUM", col("User_ai.token_all")), 0),
-          "token_all_sum",
-        ],
+        [fn("COALESCE", fn("SUM", col("User_ai.token_count")), 0), "token_count_sum"],
+        [fn("COALESCE", fn("SUM", col("User_ai.token_all")), 0), "token_all_sum"],
       ],
       include: [
         {
@@ -176,7 +164,7 @@ exports.listGroups = async ({ page, pageSize, where: filters = {} } = {}) => {
           required: true,
           where: { group_name: { [Op.in]: groupNames } },
         },
-        { model: Ai, as: "ai", attributes: [], required: true }, // ต้องมี ai_id เพื่อ map model_use_name
+        { model: Ai, as: "ai", attributes: [], required: true },
       ],
       group: [col("user.group_name"), col("ai.model_use_name")],
       raw: true,
@@ -221,7 +209,7 @@ exports.listGroups = async ({ page, pageSize, where: filters = {} } = {}) => {
     if (group.ai?.model_use_name) {
       modelMap.set(group.ai.model_use_name, {
         ...group.ai,
-        init_token: null, // default model ไม่มี init_token ใน group_ai
+        init_token: null,
       });
     }
 
@@ -238,19 +226,15 @@ exports.listGroups = async ({ page, pageSize, where: filters = {} } = {}) => {
     const models = [...modelMap.values()].map((m) => {
       const key = `${name}|${m.model_use_name}`;
 
-      // 1) today/average จาก User_token.total_token (รวมทุก user ในกลุ่มนั้น)
       const tokensToday = todayMap.get(key) ?? 0;
       const tokensMonth = monthMap.get(key) ?? 0;
-      const average =
-        daysElapsed > 0 ? Math.round(tokensMonth / daysElapsed) : 0;
+      const average = daysElapsed > 0 ? Math.round(tokensMonth / daysElapsed) : 0;
 
-      // 2) token_count/token_all จาก User_ai (รวมทุก user ในกลุ่มนั้น)
       const ua = userAiMap.get(key) ?? { token_count: 0, token_all: 0 };
 
       return {
         ...m,
         ai_id: m.id,
-        //init_token: m.init_token ?? null,
 
         today: tokensToday,
         average,
@@ -329,6 +313,26 @@ exports.getGroupByName = async (name) => {
     ],
   });
 };
+
+exports.getAllGroupsWithUserCount = async () => {
+  const sql = `
+    SELECT
+      g.id,
+      g.name,
+      g.code,
+      COUNT(u.id)::int AS user_count
+    FROM "group" g
+    LEFT JOIN "user" u
+      ON u."group_name" = g.name
+    GROUP BY g.id, g.name, g.code
+    ORDER BY user_count DESC, g.id ASC;
+  `;
+
+  // ถ้า user.group_name เก็บเป็น code ให้แก้ ON เป็น:
+  // ON u."group_name" = g.code
+
+  return sequelize.query(sql, { type: QueryTypes.SELECT });
+}
 
 exports.updateGroup = async (id, input, ctx) => {
   const locale = await getLocale(ctx);

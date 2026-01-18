@@ -16,6 +16,10 @@ const { convertWebmToMp3 } = require("../utils/convertWebmToMp3");
 const { checkTokenQuota } = require("../utils/checkTokenQuota");
 const { updateTokenAndNotify } = require("../utils/updateTokenAndNotify");
 const { upsertDailyUserToken } = require("../utils/upsertDailyUserToken.js");
+const { saveFilesToDb } = require("../utils/saveFilesToDb.js");
+const { geminiGenerateImage } = require("../function/gemini-image.js");
+const { geminiGenerateExcel } = require("../function/gemini-doc.js");
+const { setUserDailyActive } = require("../utils/userActive.js");
 const { Message, Chat, Ai, File, User_ai, User, User_role, Chatgroup } = db;
 
 exports.listMessages = async ({ chat_id, user_id }) => {
@@ -39,6 +43,8 @@ exports.listMessages = async ({ chat_id, user_id }) => {
     },
   ];
 
+  setUserDailyActive(user_id, "ACTIVE")
+
   return await Message.findAll({
     where: { chat_id },
     order: [["id", "ASC"]],
@@ -47,12 +53,17 @@ exports.listMessages = async ({ chat_id, user_id }) => {
 };
 
 exports.getMessageById = async (id) => {
-  return await Message.findByPk(id);
+  const findMessage = await Message.findByPk(id);
+  const findChat = await Chat.findByPk(findMessage.chat_id);
+
+  setUserDailyActive(findChat?.user_id, "ACTIVE")
+
+  return findMessage
 };
 
 exports.createMessage = async (input, ctx) => {
-  const { chat_id, message, fileMessageList, locale } = input;
-  console.log(chat_id, message, fileMessageList, locale);
+  const { message_type, chat_id, message, fileMessageList, locale } = input;
+  console.log(message_type, chat_id, message, fileMessageList, locale);
 
   // เวลาปัจจุบันของประเทศไทย
   const nowTH = new Date().toLocaleString(
@@ -333,7 +344,9 @@ exports.createMessage = async (input, ctx) => {
       );
 
       // กรอง null ออก
-      return mapped.filter((x) => x !== null && x !== undefined);
+      return mapped
+      .flatMap((x) => (Array.isArray(x) ? x : [x]))
+      .filter((x) => x != null);
     }
 
     // สร้าง array สำหรับเก็บ prompt ที่ผ่านมาโดยมี prompt ตั้งต้น
@@ -341,8 +354,8 @@ exports.createMessage = async (input, ctx) => {
     // ข้อความตามภาษา
     const systemPrompt =
       locale === "th"
-        ? `คุณคือผู้ช่วยส่วนตัว วันที่และเวลาปัจจุบันของประเทศไทยคือ ${nowTH}`
-        : `You are a personal assistant. The current date and time in Thailand is ${nowTH}`;
+        ? `คุณคือผู้ช่วยส่วนตัว วันที่และเวลาปัจจุบันของประเทศไทยคือ ${nowTH} ก่อนตอบให้ใช้ Google Search เสมอ และอ้างอิงจากผลค้นหา`
+        : `You are a personal assistant. The current date and time in Thailand is ${nowTH} Always use Google Search before answering, then answer using the search results.`;
 
     const modelReply =
       locale === "th"
@@ -414,6 +427,7 @@ exports.createMessage = async (input, ctx) => {
     try {
       const sendData = await Message.create({
         role: "user",
+        message_type: message_type,
         text: message,
         file: fileMessageList_id,
         input_token: 0,
@@ -435,6 +449,7 @@ exports.createMessage = async (input, ctx) => {
     try {
       await Message.create({
         role: "model",
+        message_type: message_type,
         text: text,
         file: [],
         input_token: response.usageMetadata.promptTokenCount,
@@ -587,9 +602,9 @@ exports.createMessage = async (input, ctx) => {
               { type: "input_text", text: `ถอดเสียงจากไฟล์: ${removeFirstPrefix(filename)}` },
               { type: "input_text", text: transcript || "(ไม่พบข้อความจากการถอดเสียง)" },
             ];
-
+          } 
           // ---- MP4 (วิดีโอ) ----
-          } if (ext === ".mp4") {
+          if (ext === ".mp4") {
             const filePath = path.join(__dirname, "../uploads", filename);
             // ส่งเสียงไปถอดเป็นข้อความได้เลย (mp4 รองรับใน Transcriptions)
             const transcript = await transcribeAudio(filePath);
@@ -597,7 +612,8 @@ exports.createMessage = async (input, ctx) => {
               { type: "input_text", text: `สรุปจากวิดีโอ: ${removeFirstPrefix(filename)}` },
               { type: "input_text", text: transcript || "(ไม่พบข้อความจากการถอดเสียงวิดีโอ)" },
             ];
-          } if ([".webm"].includes(ext)) {
+          } 
+          if ([".webm"].includes(ext)) {
             
             // ดึงไฟล์มาจากที่อยู่ในเครื่อง
             const filePath_old = path.join(__dirname, "../uploads", filename);
@@ -701,6 +717,7 @@ exports.createMessage = async (input, ctx) => {
     try {
       const sendData = await Message.create({
         role: "user",
+        message_type: message_type,
         text: message,
         file: fileMessageList_id,
         input_token: 0,
@@ -722,6 +739,7 @@ exports.createMessage = async (input, ctx) => {
     try {
       await Message.create({
         role: "assistant",
+        message_type: message_type,
         text: text,
         file: [],
         input_token: response.usage.input_tokens,
@@ -768,9 +786,927 @@ exports.createMessage = async (input, ctx) => {
   //return await Message.create(input);
 };
 
+exports.createMessageImage = async (input, ctx) => {
+  const { message_type, chat_id, message, locale } = input;
+  console.log(message_type, chat_id, message, locale);
+
+  // เวลาปัจจุบันของประเทศไทย
+  const nowTH = new Date().toLocaleString(
+    locale === "th" ? "th-TH" : "en-US",
+    {
+      timeZone: "Asia/Bangkok",
+      year: "numeric",
+      month: "long",
+      day: "numeric",
+      hour: "2-digit",
+      minute: "2-digit",
+      second: "2-digit",
+    }
+  );
+
+  // เรียกดูข้อมูลของ chat เพื่อดูว่าใช้ model อันไหน
+  const chatOne = await Chat.findByPk(chat_id, {
+    include: [
+      {
+        model: Ai,
+        as: "ai", // ต้องตรงกับ alias ใน association
+      },
+      {
+        model: User,
+        as: "user", // ต้องตรงกับ alias ใน association
+        include: [
+          {
+            model: User_ai,
+            as: "user_ai", // ต้องตรงกับ alias ใน association
+            required: false,
+          },
+        ],
+      },
+    ],
+  });
+  console.log(chatOne.ai.model_type);
+  // ห้ามส่งคำถามถ้าเหลือ token ของ user ทั้งหมดเหลือไม่ถึง 15%
+  await checkTokenQuota({
+    aiId: chatOne?.ai?.id,
+    userId: chatOne?.user_id,
+    // minPercent: 15, // ไม่ส่งก็ได้ ใช้ค่า default
+    ctx
+  });
+
+  // ดึงข้อมูลของ chat ทั้งหมดที่อยู่ใน chatgroup นี้
+  const messageAllByChatId = await Message.findAll({
+    order: [["id", "ASC"]],
+    where: { chat_id: chat_id },
+    include: [
+      {
+        model: File,                // ต้องมี association: Chatgroup.hasMany(Chat, { as: 'chat', foreignKey: 'chatgroup_id' })
+        as: 'files',
+        attributes: ["file_name"],
+        required: true, // บังคับว่าต้องแมตช์ role ด้วย
+        separate: true,             // กัน limit/ordering ของ Chatgroup ไม่เพี้ยน
+      },
+    ],
+  });
+
+  console.log("files", messageAllByChatId[0]?.files);
+
+  // ถ้าใช้ gemini
+  if (chatOne.ai.model_type === "gemini") {
+    // function สำหรับแปลงไฟล์เป็นข้อมูลสำหรับส่งไป model
+    async function processFiles(fileArray) {
+      // fileArray เป็น array ของชื่อไฟล์ เช่น ['a.png', 'b.pdf']
+      const mapped = await Promise.all(
+        fileArray.map(async (filename) => {
+          const ext = path.extname(filename).toLowerCase();
+          // ถ้าไฟล์เป็นรูปภาพ
+          if ([".png", ".jpg", ".jpeg"].includes(ext)) {
+            // เก็บนามสกุลไฟล์
+            let tranext = ext === ".jpg" ? "jpeg" : ext.substring(1);
+            // ดึงไฟล์มาจากที่อยู่ในเครื่อง
+            const filePath = path.join(__dirname, "../uploads", filename);
+            console.log(filePath);
+
+            // เเปลงเป็น base64
+            const imgBase64 = fs.readFileSync(filePath, { encoding: "base64" });
+
+            return {
+              inlineData: {
+                data: imgBase64,
+                mimeType: `image/${tranext}`,
+              },
+            };
+
+            // // เเปลงเป็น base64
+            // const imgBase64 = await uploadAndWait(filePath, `image/${tranext}`, filename);
+
+            // return {
+            //   fileData: {
+            //     fileUri: imgBase64.uri,
+            //     mimeType: imgBase64.mimeType,
+            //   },
+            // };
+            
+            // ถ้าไฟล์เป็น pdf
+          } else if (ext === ".pdf") {
+            // ดึงไฟล์มาจากที่อยู่ในเครื่อง
+            const filePath = path.join(__dirname, "../uploads", filename);
+            // แปลงไฟล์ pdf ให้เป็น text + images
+            const { text, images } = await extractTextFromPDF(filePath);
+
+            // แปลงเป็น parts ที่ใช้กับ Gemini ได้เลย
+            const pdfParts = [
+              { text: `นี่คือเนื้อหาจากไฟล์ PDF: ${removeFirstPrefix(filename)}` },
+              { text }, // เนื้อหาทั้งหมดจาก PDF
+            ];
+            
+            const imageParts = (images || []).map((img, index) => ({
+              inlineData: {
+                data: img.data,                       // base64 string
+                mimeType: img.mimeType || "image/png",
+              },
+            }));
+
+            // ให้ฟังก์ชันนี้ return เป็น parts array สำหรับ Gemini
+            return [...pdfParts, ...imageParts];
+
+            // // ดึงไฟล์มาจากที่อยู่ในเครื่อง
+            // const filePath = path.join(__dirname, "../uploads", filename);
+            // console.log(filePath);
+
+            // // แปลงไฟล์ pdf ให้เป็น text
+            // const pdfText = await uploadAndWait(filePath, "application/pdf", filename);
+            // //console.log(pdfText);
+
+            // return {
+            //   fileData: {
+            //     fileUri: pdfText.uri,
+            //     mimeType: pdfText.mimeType,
+            //   },
+            // };
+
+          // ถ้าไฟล์เป็น word
+          } else if ([".doc", ".docx"].includes(ext)) {
+            // ดึงไฟล์มาจากที่อยู่ในเครื่อง
+            const filePath = path.join(__dirname, "../uploads", filename);
+            // แปลงไฟล์ word ให้เป็น text + images
+            const { text, images } = await extractTextFromWord(filePath);
+
+            // แปลงเป็น parts ที่ใช้กับ Gemini ได้เลย
+            const wordParts = [
+              { text: `นี่คือเนื้อหาจากไฟล์ Word: ${removeFirstPrefix(filename)}` },
+              { text }, // เนื้อหาทั้งหมดจาก Word
+            ];
+            
+            const imageParts = (images || []).map((img, index) => ({
+              inlineData: {
+                data: img.base64,                       // base64 string
+                mimeType: img.contentType || "image/png",
+              },
+            }));
+
+            // ให้ฟังก์ชันนี้ return เป็น parts array สำหรับ Gemini
+            return [...wordParts, ...imageParts];
+
+          // ถ้าไฟล์เป็น excel
+          } else if ([".xlsx", ".xls"].includes(ext)) {
+            // ดึงไฟล์มาจากที่อยู่ในเครื่อง
+            const filePath = path.join(__dirname, "../uploads", filename);
+            // แปลงไฟล์ excel ให้เป็น text + images
+            const { text, images } = await extractTextFromExcel(filePath);
+
+            // แปลงเป็น parts ที่ใช้กับ Gemini ได้เลย
+            const excelParts = [
+              { text: `นี่คือเนื้อหาจากไฟล์ Excel: ${removeFirstPrefix(filename)}` },
+              { text }, // เนื้อหาทั้งหมดจาก Excel
+            ];
+
+            const imageParts = (images || []).map((img, index) => ({
+              inlineData: {
+                data: img.base64,                       // base64 string
+                mimeType: img.mimeType || "image/png",
+              },
+            }));
+
+            // ให้ฟังก์ชันนี้ return เป็น parts array สำหรับ Gemini
+            return [...excelParts, ...imageParts];
+
+          } else if ([".pptx", ".ppt"].includes(ext)) {
+            // ดึงไฟล์มาจากที่อยู่ในเครื่อง
+            const filePath = path.join(__dirname, "../uploads", filename);
+            // แปลงไฟล์ powerpoint ให้เป็น text + images
+            const { text, images } = await extractTextFromPowerPoint(filePath);
+
+            // แปลงเป็น parts ที่ใช้กับ Gemini ได้เลย
+            const powerPointParts = [
+              { text: `นี่คือเนื้อหาจากไฟล์ power point: ${removeFirstPrefix(filename)}` },
+              { text }, // เนื้อหาทั้งหมดจาก PowerPoint
+            ];
+            
+            const imageParts = (images || []).map((img, index) => ({
+              inlineData: {
+                data: img.base64,                       // base64 string
+                mimeType: img.contentType || "image/png",
+              },
+            }));
+
+            // ให้ฟังก์ชันนี้ return เป็น parts array สำหรับ Gemini
+            return [...powerPointParts, ...imageParts];
+
+          // ถ้าไฟล์เป็น mp3
+          } else if ([".mp3"].includes(ext)) {
+
+            // เก็บนามสกุลไฟล์
+            let tranext = ext.substring(1);
+            // ดึงไฟล์มาจากที่อยู่ในเครื่อง
+            const filePath = path.join(__dirname, "../uploads", filename);
+            console.log(filePath);
+
+            // แปลงไฟล์ mp3, mp4
+            const videoText = await uploadAndWait(filePath, `audio/${tranext}`, filename);
+            //console.log(mp3Text);
+
+            return {
+              fileData: {
+                fileUri: videoText.uri,
+                mimeType: videoText.mimeType,
+              },
+            };
+
+          // ถ้าไฟล์เป็น mp4
+          } else if ([".mp4"].includes(ext)) {
+
+            // เก็บนามสกุลไฟล์
+            let tranext = ext.substring(1);
+            // ดึงไฟล์มาจากที่อยู่ในเครื่อง
+            const filePath = path.join(__dirname, "../uploads", filename);
+            console.log(filePath);
+
+            // แปลงไฟล์ mp3, mp4
+            const videoText = await uploadAndWait(filePath, `video/${tranext}`, filename);
+            //console.log(mp3Text);
+
+            return {
+              fileData: {
+                fileUri: videoText.uri,
+                mimeType: videoText.mimeType,
+              },
+            };
+          } else if ([".webm"].includes(ext)) {
+            
+            // ดึงไฟล์มาจากที่อยู่ในเครื่อง
+            const filePath_old = path.join(__dirname, "../uploads", filename);
+            console.log(filePath_old);
+
+            const { fileName, mimeType, filePath } = await convertWebmToMp3(filename, filePath_old);
+            //console.log(fileName, mimeType, filePath);
+            
+            // แปลงไฟล์ mp3, mp4
+            const videoText = await uploadAndWait(filePath, `audio/mp3`, fileName);
+            //console.log(mp3Text);
+
+            return {
+              fileData: {
+                fileUri: videoText.uri,
+                mimeType: videoText.mimeType,
+              },
+            };
+          } 
+
+          // ไฟล์ที่ไม่รองรับ
+          return null;
+        })
+      );
+
+      // กรอง null ออก
+      return mapped
+      .flatMap((x) => (Array.isArray(x) ? x : [x]))
+      .filter((x) => x != null);
+    }
+
+    // สร้าง array สำหรับเก็บ prompt ที่ผ่านมาโดยมี prompt ตั้งต้น
+    // locale: "th" | "en"
+    // ข้อความตามภาษา
+    const systemPrompt =
+      locale === "th"
+        ? `คุณคือผู้ช่วยส่วนตัว วันที่และเวลาปัจจุบันของประเทศไทยคือ ${nowTH} ก่อนตอบให้ใช้ Google Search เสมอ และอ้างอิงจากผลค้นหา`
+        : `You are a personal assistant. The current date and time in Thailand is ${nowTH} Always use Google Search before answering, then answer using the search results.`;
+
+    const modelReply =
+      locale === "th"
+        ? "รับทราบครับ ผมจะทำหน้าที่เป็นผู้ช่วยของคุณ"
+        : "Acknowledged. I will act as your personal assistant.";
+
+    // history สำหรับส่งเข้า gemini
+    const historyList = [
+      {
+        role: "user",
+        parts: [{ text: systemPrompt }],
+      },
+      {
+        role: "model",
+        parts: [{ text: modelReply }],
+      },
+    ];
+
+    // เก็บ prompt ที่ผ่านมาทั้งหมดใน array
+    for (const message of messageAllByChatId) {
+      const file_history = message?.files.map(x => x?.file_name).filter(Boolean);      
+      const fileParts = await processFiles(file_history);
+
+      const history = {
+        role: message.role,
+        parts: [
+          { text: message.text },
+          // สำหรับส่งไฟล์ไปที่ model
+          ...fileParts,
+        ],
+      };
+      historyList.push(history);
+    }
+    //console.log(historyList);
+
+    // เก็บคำถามล่าสุดที่ถามใน array
+    const messageList = [
+      { text: message },
+    ];
+    console.log(messageList);
+
+    const { files, response } = await geminiGenerateImage(
+      historyList,
+      messageList,
+      {
+        model: chatOne.ai.model_image,
+        aspectRatio: "1:1",
+        outDir: "./uploads",
+        fileBase: `${Date.now()}-gen-image`,
+      }
+    );
+
+    console.log(response);
+    console.log("saved:", files);
+
+    // อัพเดทเฉพาะ updatedAt ของ chat
+    // touch updatedAt อย่างเดียว
+    const chatgroupData = await Chatgroup.findByPk(chatOne.chatgroup_id);
+    if (chatgroupData) {
+      await Chatgroup.update(
+        { chatgroup_name: chatgroupData.chatgroup_name },
+        { where: { id: chatOne.chatgroup_id } }
+      );
+    }
+    await Chat.update(
+      { chat_name: chatOne.chat_name },
+      { where: { id: chat_id } }
+    );
+
+    // เก็บรูปที่สร้างลงใน db
+    const createdFiles = await saveFilesToDb({
+      files,                 // array paths จาก generator
+      FileModel: File,       // Sequelize model
+      uploadUrlPrefix: "/uploads",
+      folder: "",
+      messageId: null,       // หรือใส่ answerData.id ถ้ารู้แล้ว
+    });
+
+    console.log("saved to db:", createdFiles.map(x => x.id));
+    // createdFiles คือ array ของ File model ที่คุณสร้างไว้
+    const fileIdsNum = createdFiles.map(x => x.id);
+    const fileIdsStr = fileIdsNum.map(String);
+
+    // เก็บคำถามลงใน db
+    try {
+      await Message.create({
+        role: "user",
+        message_type: message_type,
+        text: message,
+        file: [],
+        input_token: 0,
+        output_token: 0,
+        total_token: 0,
+        chat_id: chat_id,
+      });
+    } catch (error) {
+      console.log(error);
+    }
+
+    // เก็บคำตอบจาก model ลงใน db
+    try {
+      const answerData = await Message.create({
+        role: "model",
+        message_type: message_type,
+        text: "",
+        file: fileIdsStr,
+        input_token: response.usageMetadata.promptTokenCount,
+        output_token:
+          (response?.usageMetadata?.candidatesTokenCount ?? 0) +
+          (response?.usageMetadata?.thoughtsTokenCount ?? 0) +
+          (response?.usageMetadata?.toolUsePromptTokenCount ?? 0),
+        total_token: response.usageMetadata.totalTokenCount,
+        chat_id: chat_id,
+      });
+
+      for (const item of createdFiles.map(x => x.id)) {
+        await File.update({
+          message_id: answerData.id
+        }, {where: {id: item}})
+      }
+    } catch (error) {
+      console.log(error);
+    }
+
+    try {
+      await upsertDailyUserToken({
+        aiId: chatOne?.ai?.id,
+        userId: chatOne?.user_id,
+        response,
+      });
+    } catch (error) {
+      console.log(error);
+    }
+
+    const usedTokens = response?.usageMetadata?.totalTokenCount ?? 0;
+
+    // ลบจำนวน token ที่ใช้จาก token ทั้งหมดของ model
+    // ลบจำนวน token ที่ใช้จาก token ทั้งหมดของ model ของ user
+    try {
+      // อัปเดต token + เช็ค % แล้วส่งแจ้งเตือน
+      await updateTokenAndNotify({
+        ctx,
+        chatOne,
+        usedTokens,
+        // thresholdPercent: 15, // ไม่ส่งก็ได้ ใช้ default 15
+        // transaction: t,       // ถ้ามี transaction อยู่ใน scope
+      });
+
+    } catch (error) {
+      console.log(error);
+    }
+
+    return {
+      text: "Gen Image Success",
+    };
+
+    // ถ้าใช้ openai
+  } else if (chatOne.ai.model_type === "gpt") {
+
+  }
+
+  // const messageList = [
+  //   { text: "ภาพตัวละครอนิเมะ saber จาก fate grand order" },
+  // ];
+
+  // const { files, response } = await geminiGenerateImage(
+  //   [],
+  //   messageList,
+  //   {
+  //     model: "gemini-3-pro-image-preview",
+  //     aspectRatio: "1:1",
+  //     outDir: "./uploads",
+  //     fileBase: `${Date.now()}-gen-image`,
+  //   }
+  // );
+
+  // console.log(response);
+  // console.log("saved:", files);
+}
+
+exports.createMessageVideo = async (input, ctx) => {
+  const { message_type, chat_id, message, locale } = input;
+  console.log(message_type, chat_id, message, locale);
+
+}
+
+exports.createMessageDoc = async (input, ctx) => {
+  const { message_type, chat_id, message, locale } = input;
+  console.log(message_type, chat_id, message, locale);
+  
+  // เวลาปัจจุบันของประเทศไทย
+  const nowTH = new Date().toLocaleString(
+    locale === "th" ? "th-TH" : "en-US",
+    {
+      timeZone: "Asia/Bangkok",
+      year: "numeric",
+      month: "long",
+      day: "numeric",
+      hour: "2-digit",
+      minute: "2-digit",
+      second: "2-digit",
+    }
+  );
+
+  // เรียกดูข้อมูลของ chat เพื่อดูว่าใช้ model อันไหน
+  const chatOne = await Chat.findByPk(chat_id, {
+    include: [
+      {
+        model: Ai,
+        as: "ai", // ต้องตรงกับ alias ใน association
+      },
+      {
+        model: User,
+        as: "user", // ต้องตรงกับ alias ใน association
+        include: [
+          {
+            model: User_ai,
+            as: "user_ai", // ต้องตรงกับ alias ใน association
+            required: false,
+          },
+        ],
+      },
+    ],
+  });
+  console.log(chatOne.ai.model_type);
+  // ห้ามส่งคำถามถ้าเหลือ token ของ user ทั้งหมดเหลือไม่ถึง 15%
+  await checkTokenQuota({
+    aiId: chatOne?.ai?.id,
+    userId: chatOne?.user_id,
+    // minPercent: 15, // ไม่ส่งก็ได้ ใช้ค่า default
+    ctx
+  });
+
+  // ดึงข้อมูลของ chat ทั้งหมดที่อยู่ใน chatgroup นี้
+  const messageAllByChatId = await Message.findAll({
+    order: [["id", "ASC"]],
+    where: { chat_id: chat_id },
+    include: [
+      {
+        model: File,                // ต้องมี association: Chatgroup.hasMany(Chat, { as: 'chat', foreignKey: 'chatgroup_id' })
+        as: 'files',
+        attributes: ["file_name"],
+        required: true, // บังคับว่าต้องแมตช์ role ด้วย
+        separate: true,             // กัน limit/ordering ของ Chatgroup ไม่เพี้ยน
+      },
+    ],
+  });
+
+  console.log("files", messageAllByChatId[0]?.files);
+
+  // ถ้าใช้ gemini
+  if (chatOne.ai.model_type === "gemini") {
+    // function สำหรับแปลงไฟล์เป็นข้อมูลสำหรับส่งไป model
+    async function processFiles(fileArray) {
+      // fileArray เป็น array ของชื่อไฟล์ เช่น ['a.png', 'b.pdf']
+      const mapped = await Promise.all(
+        fileArray.map(async (filename) => {
+          const ext = path.extname(filename).toLowerCase();
+          // ถ้าไฟล์เป็นรูปภาพ
+          if ([".png", ".jpg", ".jpeg"].includes(ext)) {
+            // เก็บนามสกุลไฟล์
+            let tranext = ext === ".jpg" ? "jpeg" : ext.substring(1);
+            // ดึงไฟล์มาจากที่อยู่ในเครื่อง
+            const filePath = path.join(__dirname, "../uploads", filename);
+            console.log(filePath);
+
+            // เเปลงเป็น base64
+            const imgBase64 = fs.readFileSync(filePath, { encoding: "base64" });
+
+            return {
+              inlineData: {
+                data: imgBase64,
+                mimeType: `image/${tranext}`,
+              },
+            };
+
+            // // เเปลงเป็น base64
+            // const imgBase64 = await uploadAndWait(filePath, `image/${tranext}`, filename);
+
+            // return {
+            //   fileData: {
+            //     fileUri: imgBase64.uri,
+            //     mimeType: imgBase64.mimeType,
+            //   },
+            // };
+            
+            // ถ้าไฟล์เป็น pdf
+          } else if (ext === ".pdf") {
+            // ดึงไฟล์มาจากที่อยู่ในเครื่อง
+            const filePath = path.join(__dirname, "../uploads", filename);
+            // แปลงไฟล์ pdf ให้เป็น text + images
+            const { text, images } = await extractTextFromPDF(filePath);
+
+            // แปลงเป็น parts ที่ใช้กับ Gemini ได้เลย
+            const pdfParts = [
+              { text: `นี่คือเนื้อหาจากไฟล์ PDF: ${removeFirstPrefix(filename)}` },
+              { text }, // เนื้อหาทั้งหมดจาก PDF
+            ];
+            
+            const imageParts = (images || []).map((img, index) => ({
+              inlineData: {
+                data: img.data,                       // base64 string
+                mimeType: img.mimeType || "image/png",
+              },
+            }));
+
+            // ให้ฟังก์ชันนี้ return เป็น parts array สำหรับ Gemini
+            return [...pdfParts, ...imageParts];
+
+            // // ดึงไฟล์มาจากที่อยู่ในเครื่อง
+            // const filePath = path.join(__dirname, "../uploads", filename);
+            // console.log(filePath);
+
+            // // แปลงไฟล์ pdf ให้เป็น text
+            // const pdfText = await uploadAndWait(filePath, "application/pdf", filename);
+            // //console.log(pdfText);
+
+            // return {
+            //   fileData: {
+            //     fileUri: pdfText.uri,
+            //     mimeType: pdfText.mimeType,
+            //   },
+            // };
+
+          // ถ้าไฟล์เป็น word
+          } else if ([".doc", ".docx"].includes(ext)) {
+            // ดึงไฟล์มาจากที่อยู่ในเครื่อง
+            const filePath = path.join(__dirname, "../uploads", filename);
+            // แปลงไฟล์ word ให้เป็น text + images
+            const { text, images } = await extractTextFromWord(filePath);
+
+            // แปลงเป็น parts ที่ใช้กับ Gemini ได้เลย
+            const wordParts = [
+              { text: `นี่คือเนื้อหาจากไฟล์ Word: ${removeFirstPrefix(filename)}` },
+              { text }, // เนื้อหาทั้งหมดจาก Word
+            ];
+            
+            const imageParts = (images || []).map((img, index) => ({
+              inlineData: {
+                data: img.base64,                       // base64 string
+                mimeType: img.contentType || "image/png",
+              },
+            }));
+
+            // ให้ฟังก์ชันนี้ return เป็น parts array สำหรับ Gemini
+            return [...wordParts, ...imageParts];
+
+          // ถ้าไฟล์เป็น excel
+          } else if ([".xlsx", ".xls"].includes(ext)) {
+            // ดึงไฟล์มาจากที่อยู่ในเครื่อง
+            const filePath = path.join(__dirname, "../uploads", filename);
+            // แปลงไฟล์ excel ให้เป็น text + images
+            const { text, images } = await extractTextFromExcel(filePath);
+
+            // แปลงเป็น parts ที่ใช้กับ Gemini ได้เลย
+            const excelParts = [
+              { text: `นี่คือเนื้อหาจากไฟล์ Excel: ${removeFirstPrefix(filename)}` },
+              { text }, // เนื้อหาทั้งหมดจาก Excel
+            ];
+
+            const imageParts = (images || []).map((img, index) => ({
+              inlineData: {
+                data: img.base64,                       // base64 string
+                mimeType: img.mimeType || "image/png",
+              },
+            }));
+
+            // ให้ฟังก์ชันนี้ return เป็น parts array สำหรับ Gemini
+            return [...excelParts, ...imageParts];
+
+          } else if ([".pptx", ".ppt"].includes(ext)) {
+            // ดึงไฟล์มาจากที่อยู่ในเครื่อง
+            const filePath = path.join(__dirname, "../uploads", filename);
+            // แปลงไฟล์ powerpoint ให้เป็น text + images
+            const { text, images } = await extractTextFromPowerPoint(filePath);
+
+            // แปลงเป็น parts ที่ใช้กับ Gemini ได้เลย
+            const powerPointParts = [
+              { text: `นี่คือเนื้อหาจากไฟล์ power point: ${removeFirstPrefix(filename)}` },
+              { text }, // เนื้อหาทั้งหมดจาก PowerPoint
+            ];
+            
+            const imageParts = (images || []).map((img, index) => ({
+              inlineData: {
+                data: img.base64,                       // base64 string
+                mimeType: img.contentType || "image/png",
+              },
+            }));
+
+            // ให้ฟังก์ชันนี้ return เป็น parts array สำหรับ Gemini
+            return [...powerPointParts, ...imageParts];
+
+          // ถ้าไฟล์เป็น mp3
+          } else if ([".mp3"].includes(ext)) {
+
+            // เก็บนามสกุลไฟล์
+            let tranext = ext.substring(1);
+            // ดึงไฟล์มาจากที่อยู่ในเครื่อง
+            const filePath = path.join(__dirname, "../uploads", filename);
+            console.log(filePath);
+
+            // แปลงไฟล์ mp3, mp4
+            const videoText = await uploadAndWait(filePath, `audio/${tranext}`, filename);
+            //console.log(mp3Text);
+
+            return {
+              fileData: {
+                fileUri: videoText.uri,
+                mimeType: videoText.mimeType,
+              },
+            };
+
+          // ถ้าไฟล์เป็น mp4
+          } else if ([".mp4"].includes(ext)) {
+
+            // เก็บนามสกุลไฟล์
+            let tranext = ext.substring(1);
+            // ดึงไฟล์มาจากที่อยู่ในเครื่อง
+            const filePath = path.join(__dirname, "../uploads", filename);
+            console.log(filePath);
+
+            // แปลงไฟล์ mp3, mp4
+            const videoText = await uploadAndWait(filePath, `video/${tranext}`, filename);
+            //console.log(mp3Text);
+
+            return {
+              fileData: {
+                fileUri: videoText.uri,
+                mimeType: videoText.mimeType,
+              },
+            };
+          } else if ([".webm"].includes(ext)) {
+            
+            // ดึงไฟล์มาจากที่อยู่ในเครื่อง
+            const filePath_old = path.join(__dirname, "../uploads", filename);
+            console.log(filePath_old);
+
+            const { fileName, mimeType, filePath } = await convertWebmToMp3(filename, filePath_old);
+            //console.log(fileName, mimeType, filePath);
+            
+            // แปลงไฟล์ mp3, mp4
+            const videoText = await uploadAndWait(filePath, `audio/mp3`, fileName);
+            //console.log(mp3Text);
+
+            return {
+              fileData: {
+                fileUri: videoText.uri,
+                mimeType: videoText.mimeType,
+              },
+            };
+          } 
+
+          // ไฟล์ที่ไม่รองรับ
+          return null;
+        })
+      );
+
+      // กรอง null ออก
+      return mapped
+      .flatMap((x) => (Array.isArray(x) ? x : [x]))
+      .filter((x) => x != null);
+    }
+
+    // สร้าง array สำหรับเก็บ prompt ที่ผ่านมาโดยมี prompt ตั้งต้น
+    // locale: "th" | "en"
+    // ข้อความตามภาษา
+    const systemPrompt =
+      locale === "th"
+        ? `คุณคือผู้ช่วยส่วนตัว วันที่และเวลาปัจจุบันของประเทศไทยคือ ${nowTH} ก่อนตอบให้ใช้ Google Search เสมอ และอ้างอิงจากผลค้นหา`
+        : `You are a personal assistant. The current date and time in Thailand is ${nowTH} Always use Google Search before answering, then answer using the search results.`;
+
+    const modelReply =
+      locale === "th"
+        ? "รับทราบครับ ผมจะทำหน้าที่เป็นผู้ช่วยของคุณ"
+        : "Acknowledged. I will act as your personal assistant.";
+
+    // history สำหรับส่งเข้า gemini
+    const historyList = [
+      {
+        role: "user",
+        parts: [{ text: systemPrompt }],
+      },
+      {
+        role: "model",
+        parts: [{ text: modelReply }],
+      },
+    ];
+
+    // เก็บ prompt ที่ผ่านมาทั้งหมดใน array
+    for (const message of messageAllByChatId) {
+      const file_history = message?.files.map(x => x?.file_name).filter(Boolean);      
+      const fileParts = await processFiles(file_history);
+
+      const history = {
+        role: message.role,
+        parts: [
+          { text: message.text },
+          // สำหรับส่งไฟล์ไปที่ model
+          ...fileParts,
+        ],
+      };
+      historyList.push(history);
+    }
+    //console.log(historyList);
+
+    // เก็บคำถามล่าสุดที่ถามใน array
+    const messageList = [
+      { text: message },
+    ];
+    console.log(messageList);
+
+    // ส่งประวัติ prompt และคำถามล่าสุดไปในคำนวนและ return คำตอบออกมา
+    const { files, text, rawText, response } = await geminiGenerateExcel(
+      messageList,
+      historyList,
+      {
+        model: chatOne.ai.model_name,
+        outDir: "./uploads",
+        fileBase: `${Date.now()}-gen-doc`,
+      }
+    );
+    console.log("files", files);
+    console.log("text", text);
+    console.log("rawTex", rawText);
+    console.log("response", response);
+
+    // อัพเดทเฉพาะ updatedAt ของ chat
+    // touch updatedAt อย่างเดียว
+    const chatgroupData = await Chatgroup.findByPk(chatOne.chatgroup_id);
+    if (chatgroupData) {
+      await Chatgroup.update(
+        { chatgroup_name: chatgroupData.chatgroup_name },
+        { where: { id: chatOne.chatgroup_id } }
+      );
+    }
+    await Chat.update(
+      { chat_name: chatOne.chat_name },
+      { where: { id: chat_id } }
+    );
+
+    // เก็บรูปที่สร้างลงใน db
+    // เก็บไฟล์ที่สร้างลงใน db (รองรับ png/jpg/webp + xls/xlsx)
+    const createdFiles = await saveFilesToDb({
+      files,                 // array paths จาก generator
+      FileModel: File,       // Sequelize model
+      uploadUrlPrefix: "/uploads",
+      folder: "",
+      messageId: null,       // หรือใส่ answerData.id ถ้ารู้แล้ว
+    });
+
+    console.log("saved to db:", createdFiles.map(x => x.id));
+    // createdFiles คือ array ของ File model ที่คุณสร้างไว้
+    const fileIdsNum = createdFiles.map(x => x.id);
+    const fileIdsStr = fileIdsNum.map(String);
+
+    // เก็บคำถามลงใน db
+    try {
+      await Message.create({
+        role: "user",
+        message_type: message_type,
+        text: message,
+        file: [],
+        input_token: 0,
+        output_token: 0,
+        total_token: 0,
+        chat_id: chat_id,
+      });
+    } catch (error) {
+      console.log(error);
+    }
+
+    // เก็บคำตอบจาก model ลงใน db
+    try {
+      const answerData = await Message.create({
+        role: "model",
+        message_type: message_type,
+        text: "",
+        file: fileIdsStr,
+        input_token: response.usageMetadata.promptTokenCount,
+        output_token:
+          (response?.usageMetadata?.candidatesTokenCount ?? 0) +
+          (response?.usageMetadata?.thoughtsTokenCount ?? 0) +
+          (response?.usageMetadata?.toolUsePromptTokenCount ?? 0),
+        total_token: response.usageMetadata.totalTokenCount,
+        chat_id: chat_id,
+      });
+
+      for (const item of createdFiles.map(x => x.id)) {
+        await File.update({
+          message_id: answerData.id
+        }, {where: {id: item}})
+      }
+    } catch (error) {
+      console.log(error);
+    }
+
+    try {
+      await upsertDailyUserToken({
+        aiId: chatOne?.ai?.id,
+        userId: chatOne?.user_id,
+        response,
+      });
+    } catch (error) {
+      console.log(error);
+    }
+
+    const usedTokens = response?.usageMetadata?.totalTokenCount ?? 0;
+
+    // ลบจำนวน token ที่ใช้จาก token ทั้งหมดของ model
+    // ลบจำนวน token ที่ใช้จาก token ทั้งหมดของ model ของ user
+    try {
+      // อัปเดต token + เช็ค % แล้วส่งแจ้งเตือน
+      await updateTokenAndNotify({
+        ctx,
+        chatOne,
+        usedTokens,
+        // thresholdPercent: 15, // ไม่ส่งก็ได้ ใช้ default 15
+        // transaction: t,       // ถ้ามี transaction อยู่ใน scope
+      });
+
+    } catch (error) {
+      console.log(error);
+    }
+
+    return {
+      text: "Gen Doc Success",
+    };
+
+    // ถ้าใช้ openai
+  } else if (chatOne.ai.model_type === "gpt") {
+
+  }
+}
+
 exports.updateMessage = async (id, input, ctx) => {
-  const { chat_id, message, fileMessageList, locale } = input;
-  console.log(chat_id, message, fileMessageList, locale);
+  const { message_type, chat_id, message, fileMessageList, locale } = input;
+  console.log(message_type, chat_id, message, fileMessageList, locale);
 
   // เวลาปัจจุบันของประเทศไทย
   const nowTH = new Date().toLocaleString(
@@ -1065,7 +2001,9 @@ exports.updateMessage = async (id, input, ctx) => {
       );
 
       // กรอง null ออก
-      return mapped.filter((x) => x !== null && x !== undefined);
+      return mapped
+      .flatMap((x) => (Array.isArray(x) ? x : [x]))
+      .filter((x) => x != null);
     }
 
     // สร้าง array สำหรับเก็บ prompt ที่ผ่านมาโดยมี prompt ตั้งต้น
@@ -1073,8 +2011,8 @@ exports.updateMessage = async (id, input, ctx) => {
     // ข้อความตามภาษา
     const systemPrompt =
       locale === "th"
-        ? `คุณคือผู้ช่วยส่วนตัว วันที่และเวลาปัจจุบันของประเทศไทยคือ ${nowTH}`
-        : `You are a personal assistant. The current date and time in Thailand is ${nowTH}`;
+        ? `คุณคือผู้ช่วยส่วนตัว วันที่และเวลาปัจจุบันของประเทศไทยคือ ${nowTH} ก่อนตอบให้ใช้ Google Search เสมอ และอ้างอิงจากผลค้นหา`
+        : `You are a personal assistant. The current date and time in Thailand is ${nowTH} Always use Google Search before answering, then answer using the search results.`;
 
     const modelReply =
       locale === "th"
@@ -1146,6 +2084,7 @@ exports.updateMessage = async (id, input, ctx) => {
     try {
       const sendData = await Message.create({
         role: "user",
+        message_type: message_type,
         text: message,
         file: fileMessageList_id,
         input_token: 0,
@@ -1167,6 +2106,7 @@ exports.updateMessage = async (id, input, ctx) => {
     try {
       await Message.create({
         role: "model",
+        message_type: message_type,
         text: text,
         file: [],
         input_token: response.usageMetadata.promptTokenCount,
@@ -1319,9 +2259,9 @@ exports.updateMessage = async (id, input, ctx) => {
               { type: "input_text", text: `ถอดเสียงจากไฟล์: ${removeFirstPrefix(filename)}` },
               { type: "input_text", text: transcript || "(ไม่พบข้อความจากการถอดเสียง)" },
             ];
-
+          } 
           // ---- MP4 (วิดีโอ) ----
-          } if (ext === ".mp4") {
+          if (ext === ".mp4") {
             const filePath = path.join(__dirname, "../uploads", filename);
             // ส่งเสียงไปถอดเป็นข้อความได้เลย (mp4 รองรับใน Transcriptions)
             const transcript = await transcribeAudio(filePath);
@@ -1421,6 +2361,7 @@ exports.updateMessage = async (id, input, ctx) => {
     try {
       const sendData = await Message.create({
         role: "user",
+        message_type: message_type,
         text: message,
         file: fileMessageList_id,
         input_token: 0,
@@ -1442,6 +2383,7 @@ exports.updateMessage = async (id, input, ctx) => {
     try {
       await Message.create({
         role: "assistant",
+        message_type: message_type,
         text: text,
         file: [],
         input_token: response.usage.input_tokens,

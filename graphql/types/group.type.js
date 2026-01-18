@@ -44,6 +44,8 @@ module.exports = `
     ai: AiName
     group_ai: [GroupAi!]!
 
+    user_count: Int
+
     # ✅ ใส่ตรงนี้เลย (แยกตาม Model)
     models: [GroupModelStat!]!
   }
@@ -78,6 +80,7 @@ module.exports = `
     groups(page: Int, pageSize: Int, where: GroupFilterInput): GroupPage!
     group(id: ID!): Group
     groupByName(name: String!): Group
+    groupWithUserCount: [Group]
   }
 
   extend type Mutation {

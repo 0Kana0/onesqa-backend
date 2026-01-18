@@ -4,6 +4,7 @@ const db = require('../db/models'); // หรือ '../../db/models' ถ้า�
 const { Chatgroup, Chat } = db;
 const { encodeCursor, decodeCursor } = require('../utils/cursor');
 const { getLocale, getCurrentUser } = require("../utils/currentUser");
+const { setUserDailyActive } = require('../utils/userActive');
 
 exports.listChatgroups = async (
   id,
@@ -73,6 +74,8 @@ exports.listChatgroups = async (
 
   const endCursor = edges.length ? edges[edges.length - 1].cursor : null;
 
+  setUserDailyActive(user_id, "ACTIVE")
+
   return {
     edges,
     pageInfo: {
@@ -85,6 +88,8 @@ exports.listChatgroups = async (
 exports.getChatgroupById = async (id, user_id) => {
   const where = { id };
   if (user_id != null) where.user_id = user_id; // ✅ มีค่าเมื่อไหร่ค่อยกรอง
+
+  setUserDailyActive(user_id, "ACTIVE")
 
   return await Chatgroup.findOne({ where });
 };

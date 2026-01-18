@@ -19,10 +19,9 @@ exports.listAis = async () => {
   const nowTH = moment.tz(TZ);
   const startMonthTH = nowTH.clone().startOf("month");
 
-  const startOfToday = nowTH.clone().startOf("day").toDate();
-  const startOfTomorrow = nowTH.clone().add(1, "day").startOf("day").toDate();
-  const startOfMonth = startMonthTH.toDate();
-  const startOfNextMonth = startMonthTH.clone().add(1, "month").toDate();
+  const usedDateToday = nowTH.format("YYYY-MM-DD");
+  const startOfMonthStr = startMonthTH.format("YYYY-MM-DD");
+  const startOfNextMonthStr = startMonthTH.clone().add(1, "month").format("YYYY-MM-DD");
 
   const daysElapsed = nowTH.diff(startMonthTH, "days") + 1;
 
@@ -40,7 +39,7 @@ exports.listAis = async () => {
     ],
     where: {
       ai_id: { [Op.ne]: null },
-      createdAt: { [Op.gte]: startOfToday, [Op.lt]: startOfTomorrow },
+      used_date: usedDateToday,
     },
     group: ["ai_id"],
     raw: true,
@@ -54,7 +53,7 @@ exports.listAis = async () => {
     ],
     where: {
       ai_id: { [Op.ne]: null },
-      createdAt: { [Op.gte]: startOfMonth, [Op.lt]: startOfNextMonth },
+      used_date: { [Op.gte]: startOfMonthStr, [Op.lt]: startOfNextMonthStr },
     },
     group: ["ai_id"],
     raw: true,

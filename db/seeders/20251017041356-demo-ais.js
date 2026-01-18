@@ -7,6 +7,8 @@ module.exports = {
     const candidates = [
       {
         model_name: 'gpt-5',
+        model_image: 'gpt-5',
+        //model_video: 'gpt-5',
         model_use_name: 'ChatGPT 5',
         model_type: 'gpt',
         token_count: 500000000,
@@ -18,6 +20,8 @@ module.exports = {
       {
         //model_name: 'gemini-2.5-flash',
         model_name: 'gemini-2.5-pro',
+        model_image: 'gemini-3-pro-image-preview',
+        //model_video: 'gpt-5',
         model_use_name: 'Gemini 2.5 Pro',
         model_type: 'gemini',
         token_count: 1500000000,

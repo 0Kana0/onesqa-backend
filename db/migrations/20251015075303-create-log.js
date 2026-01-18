@@ -67,6 +67,9 @@ module.exports = {
         IF EXISTS (SELECT 1 FROM pg_type WHERE typname = 'enum_log_type') THEN
           DROP TYPE "enum_log_type";
         END IF;
+        IF EXISTS (SELECT 1 FROM pg_type WHERE typname = 'enum_log_locale_type') THEN
+          DROP TYPE "enum_log_locale_type";
+        END IF;
       END$$;
     `);
   }

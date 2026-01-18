@@ -12,6 +12,12 @@ module.exports = {
       model_name: {
         type: Sequelize.STRING
       },
+      model_image: {
+        type: Sequelize.STRING
+      },
+      model_video: {
+        type: Sequelize.STRING
+      },
       model_use_name: {
         type: Sequelize.STRING
       },

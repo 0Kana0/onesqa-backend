@@ -1,10 +1,11 @@
 const AuthController = require("../../controllers/auth.controller");
-const { requireAuth } = require('../../utils/authGuard');
+const { requireAuth, checkUserInDB } = require('../../utils/authGuard');
 
 module.exports = {
   Query: {
     me: async (_parent, args, ctx) => {
       requireAuth(ctx); // ต้องล็อกอินก่อน
+      await checkUserInDB(ctx);
       return await AuthController.me(ctx);
     },
   },
@@ -22,7 +23,6 @@ module.exports = {
       return await AuthController.refreshToken(ctx)
     },
     logout: async (_parent, _a, ctx) => {
-      requireAuth(ctx); // ต้องล็อกอินก่อน
       return await AuthController.logout(ctx)
     },
   },

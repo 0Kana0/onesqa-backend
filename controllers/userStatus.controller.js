@@ -3,6 +3,7 @@ const { Op } = require("sequelize");
 const db = require("../db/models"); // หรือ '../../db/models' ถ้าโปรเจกต์คุณใช้ path นั้น
 const { User, RefreshToken } = db;
 const moment = require("moment");
+const { setUserLoginHistory } = require("../utils/userActive");
 
 // ✅ ดึงเฉพาะผู้ใช้งานที่ออนไลน์อยู่
 exports.onlineUsers = async () => {
@@ -23,7 +24,7 @@ exports.onlineUsers = async () => {
 };
 
 // ✅ ผู้ใช้ Login / ออนไลน์
-exports.setUserOnline = async (user_id) => {
+exports.setUserOnline = async (user_id, ctx) => {
   const userStatus = await User.findOne({ where: { id: user_id } });
   console.log(userStatus);
 
@@ -44,7 +45,7 @@ exports.setUserOnline = async (user_id) => {
 };
 
 // ❌ ผู้ใช้ออกจากระบบ / ปิด tab
-exports.setUserOffline = async (user_id) => {
+exports.setUserOffline = async (user_id, ctx) => {
   // ตรวจสอบว่ามี refreshToken อยู่ใน DB และยังไม่หมดอายุ
   const existing = await RefreshToken.findAll({
     where: {
@@ -64,6 +65,8 @@ exports.setUserOffline = async (user_id) => {
       { where: { id: user_id } }
     );
   }
+
+  setUserLoginHistory(user_id, "LOGOUT", ctx)
 
   pubsub.publish("USER_STATUS_CHANGED", { userStatusChanged: userStatus });
   return {

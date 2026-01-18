@@ -92,7 +92,10 @@ exports.listUsers = async ({ page, pageSize, where = {} }) => {
     where: userWhere,
     attributes: ["id"],
     include: includeRoleFilter,
-    order: [["id", "ASC"]],
+    order: [
+      ["updatedAt", "DESC"],
+      ["id", "ASC"], // ✅ กันลำดับสลับเมื่อ updatedAt เท่ากัน
+    ],
     limit,
     offset,
     distinct: true,
@@ -127,7 +130,10 @@ exports.listUsers = async ({ page, pageSize, where = {} }) => {
     where: { id: { [Op.in]: ids } },
     attributes: { exclude: ["password"] },
     include: [includeUserRole, includeUserAi],
-    order: [["id", "ASC"]],
+    order: [
+      ["updatedAt", "DESC"],
+      ["id", "ASC"], // ✅ กันลำดับสลับเมื่อ updatedAt เท่ากัน
+    ],
   });
 
   return { items, page: p, pageSize: limit, totalCount: count };
@@ -136,12 +142,12 @@ exports.listUsers = async ({ page, pageSize, where = {} }) => {
 exports.getByUserId = async (id) => {
   // ---- คำนวณช่วงเวลา (โซนไทย) ----
   const nowTH = moment.tz(TZ);
-  const startOfToday = nowTH.clone().startOf("day").toDate();
-  const startOfTomorrow = nowTH.clone().add(1, "day").startOf("day").toDate();
+
+  const usedDateToday = nowTH.format("YYYY-MM-DD");
 
   const startOfMonthTH = nowTH.clone().startOf("month");
-  const startOfMonth = startOfMonthTH.toDate();
-  const startOfNextMonth = startOfMonthTH.clone().add(1, "month").toDate();
+  const startOfMonthStr = startOfMonthTH.format("YYYY-MM-DD");
+  const startOfNextMonthStr = startOfMonthTH.clone().add(1, "month").format("YYYY-MM-DD");
 
   const daysElapsed = nowTH.diff(startOfMonthTH, "days") + 1;
 
@@ -193,7 +199,7 @@ exports.getByUserId = async (id) => {
     where: {
       user_id: id,
       ...(aiIds.length ? { ai_id: { [Op.in]: aiIds } } : {}),
-      createdAt: { [Op.gte]: startOfToday, [Op.lt]: startOfTomorrow },
+      used_date: usedDateToday,
     },
     group: ["ai_id"],
     raw: true,
@@ -208,7 +214,7 @@ exports.getByUserId = async (id) => {
     where: {
       user_id: id,
       ...(aiIds.length ? { ai_id: { [Op.in]: aiIds } } : {}),
-      createdAt: { [Op.gte]: startOfMonth, [Op.lt]: startOfNextMonth },
+      used_date: { [Op.gte]: startOfMonthStr, [Op.lt]: startOfNextMonthStr },
     },
     group: ["ai_id"],
     raw: true,
