@@ -25,6 +25,9 @@ const { upsertMonthlyUserCountPlus } = require("../utils/upsertMonthlyUserCountP
 const { getLocale } = require("../utils/currentUser.js");
 const { setUserLoginHistory, setUserDailyActive } = require("../utils/userActive.js");
 const { User, RefreshToken, User_role, User_ai, Role, Ai, Group, Group_ai, User_count } = db;
+const https = require("https");
+
+const httpsAgent = new https.Agent({ rejectUnauthorized: false });
 
 exports.me = async (ctx) => {
   console.log("ctx", ctx?.req?.user?.id);
@@ -108,6 +111,7 @@ exports.signin = async ({ username, password, locale }, ctx) => {
       `${process.env.ONESQA_URL}/users/user_login`,
       postData,
       {
+        httpsAgent,
         headers: {
           Accept: "application/json",
           "X-Auth-ID": process.env.X_AUTH_ID,
@@ -510,6 +514,7 @@ exports.signinWithIdennumber = async ({ idennumber, otp_type, locale }, ctx) => 
       `${process.env.ONESQA_URL}/assessments/get_assessor`,
       postData,
       {
+        httpsAgent,
         headers: {
           Accept: "application/json",
           "X-Auth-ID": process.env.X_AUTH_ID,

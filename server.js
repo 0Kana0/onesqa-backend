@@ -1,26 +1,29 @@
 require("dotenv").config();
+
 const express = require("express");
 const { createHandler } = require("graphql-http/lib/use/express");
 const { ruruHTML } = require("ruru/server");
 const { createServer } = require("http");
 const { WebSocketServer } = require("ws");
 const { useServer } = require("graphql-ws/lib/use/ws");
-const { graphqlUploadExpress } = require("graphql-upload"); // <-- v13 (CJS)
-const {
-  execute,
-  parse,
-  validate,
-  specifiedRules,
-  GraphQLError,
-} = require("graphql");
-const { sequelize } = require("./db/models"); // ใช้ index.js ที่ประกาศไว้
+const { graphqlUploadExpress } = require("graphql-upload"); // v13 (CJS)
+const { execute, parse, validate, specifiedRules, GraphQLError } = require("graphql");
+const { sequelize } = require("./db/models");
 const { schema } = require("./graphql/schema");
 const path = require("path");
 const cookieParser = require("cookie-parser");
 const cors = require("cors");
-// server.js (ส่วนสำคัญ)
+
 const verifyToken = require("./middleware/auth-middleware");
 const { startDailyJobs } = require("./cron/dailyJob");
+
+// ✅ LOG
+const pino = require("pino");
+const pinoHttp = require("pino-http");
+const { v4: uuidv4 } = require("uuid");
+
+// ✅ METRICS
+const client = require("prom-client");
 
 const PORT = Number(process.env.PORT || 4000);
 const URL = process.env.URL || "http://localhost";
@@ -28,13 +31,87 @@ const WS_URL = process.env.WS_URL || "ws://localhost";
 const FRONTEND_URL = process.env.FRONTEND_URL || "http://localhost:3000";
 
 async function start() {
-  await sequelize.authenticate(); // ตรวจการเชื่อมต่อ
-  // ไม่เรียก sync() เพราะเราใช้ CLI migration แล้ว
+  await sequelize.authenticate();
+
   const app = express();
-  const httpServer = createServer(app); // ✅ ใช้ HTTP server เดียวกัน
+  const httpServer = createServer(app);
 
   app.set("trust proxy", true);
 
+  // -----------------------
+  // ✅ Logger (stdout JSON)
+  // -----------------------
+  const logger = pino({
+    level: process.env.LOG_LEVEL || "info",
+    redact: {
+      paths: [
+        "req.headers.authorization",
+        "req.headers.cookie",
+        "req.headers['x-api-key']",
+      ],
+      remove: true,
+    },
+  });
+
+  app.use(
+    pinoHttp({
+      logger,
+      genReqId: (req) => req.headers["x-request-id"] || uuidv4(),
+      customLogLevel: (res, err) => {
+        if (err || res.statusCode >= 500) return "error";
+        if (res.statusCode >= 400) return "warn";
+        return "info";
+      },
+      customSuccessMessage: (req, res) =>
+        `${req.method} ${req.url} -> ${res.statusCode}`,
+      customErrorMessage: (req, res, err) =>
+        `${req.method} ${req.url} -> ${res.statusCode} (${err?.message || "error"})`,
+    })
+  );
+
+  // -----------------------
+  // ✅ Metrics (Prometheus)
+  // -----------------------
+  client.collectDefaultMetrics();
+
+  const httpRequestDuration = new client.Histogram({
+    name: "http_request_duration_seconds",
+    help: "Duration of HTTP requests in seconds",
+    labelNames: ["method", "route", "status"],
+    buckets: [0.01, 0.05, 0.1, 0.3, 0.5, 1, 2, 5],
+  });
+
+  const httpRequestsTotal = new client.Counter({
+    name: "http_requests_total",
+    help: "Total number of HTTP requests",
+    labelNames: ["method", "route", "status"],
+  });
+
+  // เก็บ route label แบบปลอดภัย (กันแตก)
+  function getRouteLabel(req) {
+    if (req.route && req.route.path) return String(req.route.path);
+    if (req.baseUrl && req.path) return `${req.baseUrl}${req.path}`;
+    return req.path || "unknown";
+  }
+
+  // middleware วัดเวลา + นับจำนวน
+  app.use((req, res, next) => {
+    const end = httpRequestDuration.startTimer();
+
+    res.on("finish", () => {
+      const route = getRouteLabel(req);
+      const status = String(res.statusCode);
+
+      end({ method: req.method, route, status });
+      httpRequestsTotal.inc({ method: req.method, route, status });
+    });
+
+    next();
+  });
+
+  // -----------------------
+  // CORS / Cookie
+  // -----------------------
   app.use(
     cors({
       origin: FRONTEND_URL,
@@ -43,15 +120,34 @@ async function start() {
   );
   app.use(cookieParser());
 
-  // ถ้า verifyToken ตรวจทุกเมธอด แนะนำให้ allow OPTIONS ด้วย (กัน preflight ติด)
-  // if (req.method === 'OPTIONS') return res.sendStatus(204);
-  app.use(verifyToken);
+  // -----------------------
+  // ✅ Health + Metrics (bypass auth)
+  // -----------------------
+  app.get("/healthz", (_req, res) => res.json({ ok: true }));
 
-  // *** เพิ่มเฉพาะบรรทัดนี้ เพื่อรองรับ Upload ผ่าน GraphQL ***
-  // ✅ รองรับอัปโหลดไฟล์ผ่าน GraphQL เฉพาะ POST /graphql
+  app.get("/metrics", async (_req, res) => {
+    try {
+      res.set("Content-Type", client.register.contentType);
+      res.end(await client.register.metrics());
+    } catch (e) {
+      res.status(500).json({ message: "metrics error" });
+    }
+  });
+
+  // -----------------------
+  // ✅ Auth middleware (skip some paths)
+  // -----------------------
+  app.use((req, res, next) => {
+    const p = req.path || "";
+    if (p === "/healthz" || p === "/metrics" || p.startsWith("/uploads")) return next();
+    return verifyToken(req, res, next);
+  });
+
+  // -----------------------
+  // ✅ Upload GraphQL (multipart only)
+  // -----------------------
   app.post(
     "/graphql",
-    // รับเฉพาะ multipart เท่านั้น, ไม่ใช่ multipart ให้ไป handler ถัดไป
     (req, res, next) => {
       const ct = req.headers["content-type"] || "";
       if (ct.startsWith("multipart/form-data")) return next();
@@ -60,9 +156,7 @@ async function start() {
     graphqlUploadExpress({ maxFileSize: 25 * 1024 * 1024, maxFiles: 10 }),
     async (req, res) => {
       try {
-        // หลัง graphqlUploadExpress, req.body ควรเป็น { query, variables, operationName }
         if (!req.body || typeof req.body.query !== "string") {
-          // debug ให้เห็นว่า body กลายเป็นอะไร
           return res.status(400).json({
             errors: [
               {
@@ -74,11 +168,11 @@ async function start() {
         }
 
         const { query, variables, operationName } = req.body;
+
         let document;
         try {
           document = parse(query);
         } catch (e) {
-          // parse error = 400
           return res.status(400).json({ errors: [{ message: e.message }] });
         }
 
@@ -88,6 +182,9 @@ async function start() {
             .status(400)
             .json({ errors: vErrors.map((e) => ({ message: e.message })) });
         }
+
+        // ✅ ใส่ log เพิ่มนิด: operationName (ถ้ามี)
+        req.log.info({ operationName }, "graphql upload request");
 
         const result = await execute({
           schema,
@@ -100,7 +197,7 @@ async function start() {
         res.setHeader("content-type", "application/json");
         res.status(200).end(JSON.stringify(result));
       } catch (err) {
-        console.error("UPLOAD_EXECUTOR_ERROR:", err);
+        req.log.error({ err }, "UPLOAD_EXECUTOR_ERROR");
         const msg =
           err instanceof GraphQLError
             ? err.message
@@ -110,30 +207,41 @@ async function start() {
     }
   );
 
+  // -----------------------
+  // ✅ GraphQL JSON handler
+  // -----------------------
   app.all("/graphql", (req, res) => {
     return createHandler({
       schema,
-      context: (_req, params) => ({ req, res, params }), // ← ใช้ res จากคลอเชอร์นี้
+      context: (_req, params) => {
+        // ✅ params มักมี operationName/query/variables ใน graphql-http
+        // log แบบไม่ใส่ sensitive
+        req.log.debug(
+          { operationName: params?.operationName },
+          "graphql request"
+        );
+        return { req, res, params };
+      },
     })(req, res);
   });
 
-  // ✅ หน้า GraphiQL (ruru)
+  // ✅ GraphiQL (ruru)
   app.get("/", (_req, res) => {
     res.type("html").send(
       ruruHTML({
         endpoint: "/graphql",
-        subscriptionsEndpoint: `${WS_URL}:${PORT}/graphql`, // 🔥 เพิ่มสำหรับ subscription
+        subscriptionsEndpoint: `${WS_URL}:${PORT}/graphql`,
       })
     );
   });
 
-  // Static middleware สำหรับให้บริการไฟล์สาธารณะ
+  // ✅ static uploads
   app.use("/uploads", express.static(path.join(__dirname, "uploads")));
 
-  // เริ่ม cronjob
+  // ✅ cronjob
   startDailyJobs();
 
-  // ✅ WebSocket Server สำหรับ GraphQL Subscriptions
+  // ✅ WS Subscriptions
   const wsServer = new WebSocketServer({
     server: httpServer,
     path: "/graphql",
@@ -141,14 +249,22 @@ async function start() {
 
   useServer({ schema }, wsServer);
 
+  // ✅ error handler กลาง (กันหลุดแบบไม่ log)
+  app.use((err, req, res, _next) => {
+    req.log.error({ err }, "UNHANDLED_ERROR");
+    res.status(500).json({ message: "Internal Server Error" });
+  });
+
   httpServer.listen(PORT, () => {
-    console.log(`🚀 GraphQL HTTP:  ${URL}:${PORT}/graphql`);
-    console.log(`🔌 WebSocket WS: ${WS_URL}:${PORT}/graphql`);
-    console.log(`🧠 GraphiQL:     ${URL}:${PORT}`);
+    logger.info(`🚀 GraphQL HTTP:  ${URL}:${PORT}/graphql`);
+    logger.info(`🔌 WebSocket WS: ${WS_URL}:${PORT}/graphql`);
+    logger.info(`🧠 GraphiQL:     ${URL}:${PORT}`);
+    logger.info(`📈 Metrics:      ${URL}:${PORT}/metrics`);
   });
 }
 
 start().catch((err) => {
+  // start ก่อนมี req.log ให้ใช้ console ได้
   console.error(err);
   process.exit(1);
 });

@@ -4,6 +4,9 @@ require("dotenv").config();
 const cron = require("node-cron");
 const moment = require("moment-timezone");
 const { Op } = require("sequelize");
+const https = require("https");
+
+const httpsAgent = new https.Agent({ rejectUnauthorized: false });
 
 const db = require("../db/models");
 const { Group, Group_ai, Ai, User_count, Notification, RefreshToken } = db;
@@ -19,6 +22,7 @@ async function syncGroupsFromApi() {
       `${process.env.ONESQA_URL}/basics/get_group`,
       null,
       {
+        httpsAgent,
         headers: {
           Accept: "application/json",
           "X-Auth-ID": process.env.X_AUTH_ID,

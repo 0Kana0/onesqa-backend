@@ -8,6 +8,9 @@ const { auditLog } = require("../utils/auditLog"); // ปรับ path ให�
 const { notifyUser } = require("../utils/notifier"); // ที่ไฟล์ service/controller ของคุณ
 const { getLocale, getCurrentUser } = require("../utils/currentUser");
 const moment = require('moment-timezone');
+const https = require("https");
+
+const httpsAgent = new https.Agent({ rejectUnauthorized: false });
 
 const TZ = 'Asia/Bangkok';
 
@@ -668,6 +671,7 @@ const isOnesqaDownError = (err) => {
 async function onesqaPost(endpoint, data, headers) {
   try {
     return await axios.post(`${process.env.ONESQA_URL}${endpoint}`, data, {
+      httpsAgent,
       headers,
       timeout: ONESQA_TIMEOUT,
     });

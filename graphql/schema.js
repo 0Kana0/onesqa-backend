@@ -61,6 +61,12 @@ const userDailyActiveResolver = require("./resolvers/user_daily_active.resolver"
 const userLoginHistoryType = require("./types/user_login_history.type");
 const userLoginHistoryResolver = require("./resolvers/user_login_history.resolver");
 
+const academyType = require("./types/academy.type");
+const academyResolver = require("./resolvers/academy.resolver");
+
+const sarHistoryType = require("./types/sarhistory.type");
+const sarHistoryResolver = require("./resolvers/sarhistory.resolver");
+
 const typeDefs = [
   baseType, 
   aiType, 
@@ -80,7 +86,9 @@ const typeDefs = [
   groupType,
   userCountType,
   userDailyActiveType,
-  userLoginHistoryType
+  userLoginHistoryType,
+  academyType,
+  sarHistoryType
 ];
 const resolvers = [
   aiResolver, 
@@ -100,7 +108,9 @@ const resolvers = [
   groupResolver,
   userCountResolver,
   userDailyActiveResolver,
-  userLoginHistoryResolver
+  userLoginHistoryResolver,
+  academyResolver,
+  sarHistoryResolver
 ];
 
 const schema = makeExecutableSchema({ typeDefs, resolvers });

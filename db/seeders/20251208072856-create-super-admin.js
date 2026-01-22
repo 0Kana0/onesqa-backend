@@ -4,6 +4,15 @@ const bcrypt = require("bcrypt");
 
 module.exports = {
   async up(queryInterface, Sequelize) {
+    // ✅ PostgreSQL: "user" เป็นคำสงวน ควร quote
+    const [rows] = await queryInterface.sequelize.query(
+      `SELECT id FROM "user" WHERE username = :username LIMIT 1`,
+      { replacements: { username: "Admin01" } }
+    );
+
+    // ✅ ถ้าเจอ Admin01 อยู่แล้ว -> ไม่ต้องสร้าง/ไม่ต้อง insert role/ai ซ้ำ
+    if (rows.length > 0) return;
+
     // 1) สร้าง Admin User
     const passwordHash = await bcrypt.hash("admin1234@", 10);
 
@@ -24,7 +33,7 @@ module.exports = {
         locale: "th",
         alert: false,
         is_online: false,
-        loginAt: null,        // ✅ เพิ่มบรรทัดนี้
+        loginAt: null,
         createdAt: new Date(),
         updatedAt: new Date(),
       },
@@ -66,11 +75,13 @@ module.exports = {
   },
 
   async down(queryInterface, Sequelize) {
-    // ดึง user id เพื่อให้ undo ถูกต้อง
-    const [[user]] = await queryInterface.sequelize.query(
-      `SELECT id FROM user WHERE username = 'admin' ORDER BY id DESC LIMIT 1`
+    // ✅ แก้ username ให้ตรง + quote "user" สำหรับ PostgreSQL
+    const [rows] = await queryInterface.sequelize.query(
+      `SELECT id FROM "user" WHERE username = :username ORDER BY id DESC LIMIT 1`,
+      { replacements: { username: "Admin01" } }
     );
 
+    const user = rows?.[0];
     if (user) {
       await queryInterface.bulkDelete("user_role", { user_id: user.id });
       await queryInterface.bulkDelete("user_ai", { user_id: user.id });
