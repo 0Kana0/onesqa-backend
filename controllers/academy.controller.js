@@ -156,67 +156,33 @@ async function mapPool(items, limit, mapper) {
 const isOnesqaDownError = (err) => {
   const status = err?.response?.status;
 
-  if (!err?.response) return true; // network/timeout/DNS/ECONNRESET
+  // ไม่มี response = network/timeout/DNS/ECONNREFUSED ฯลฯ
+  if (!err?.response) return true;
 
-  if (typeof status === "number") {
-    if (status >= 500) return true;
-    if ([408, 429].includes(status)) return true; // timeout / rate limit
-  }
-  return false;
-};
-
-const wait = (ms) => new Promise((r) => setTimeout(r, ms));
-const isRetryable = (err) => {
-  const code = err?.code;
-  const status = err?.response?.status;
-
-  // network ชั้น transport
-  if (!err?.response && ["ECONNRESET", "ETIMEDOUT", "ECONNABORTED", "EAI_AGAIN", "ENOTFOUND"].includes(code)) {
-    return true;
-  }
-
-  // ปลายทาง/เกตเวย์/โดนจำกัด
-  if (typeof status === "number" && [408, 429, 500, 502, 503, 504].includes(status)) {
-    return true;
-  }
+  // 5xx = ฝั่ง ONESQA มีปัญหา
+  if (typeof status === "number" && status >= 500) return true;
 
   return false;
 };
-async function onesqaPost(endpoint, data, headers, opts = {}) {
-  const baseURL = process.env.ONESQA_URL;
-  const timeout = opts.timeout ?? ONESQA_TIMEOUT;
-  const retries = opts.retries ?? 3;
 
-  for (let attempt = 0; attempt <= retries; attempt++) {
-    try {
-      return await axios.post(`${baseURL}${endpoint}`, data, {
-        httpsAgent,
-        headers,
-        timeout,
-      });
-    } catch (err) {
-      // log แบบไม่พ่น token
-      console.log("[ONESQA]", endpoint, "attempt", attempt + 1, {
-        code: err?.code,
-        status: err?.response?.status,
-        msg: err?.message,
-      });
-
-      if (!isRetryable(err) || attempt === retries) {
-        // ถ้าเป็น "ล่ม/ไม่พร้อม" จริง ค่อยแปลงข้อความ
-        if (isOnesqaDownError(err)) {
-          throw new Error(
-            locale === "th" ? "ระบบ ONESQA ไม่พร้อมใช้งาน" : "ONESQA system is unavailable",
-            { cause: err } // เก็บต้นตอไว้
-          );
-        }
-        throw err;
-      }
-
-      // backoff + jitter
-      const jitter = Math.floor(Math.random() * 200);
-      await wait(500 * 2 ** attempt + jitter);
+async function onesqaPost(endpoint, data, headers) {
+  try {
+    return await axios.post(`${process.env.ONESQA_URL}${endpoint}`, data, {
+      httpsAgent,
+      headers,
+      timeout: ONESQA_TIMEOUT,
+    });
+  } catch (err) {
+    console.log(err);
+    if (isOnesqaDownError(err)) {
+      throw new Error(
+        locale === "th"
+          ? "ระบบ ONESQA ไม่พร้อมใช้งาน"
+          : "ONESQA system is unavailable",
+      );
     }
+    // ✅ 4xx หรือ error อื่น ๆ ให้คง behavior เดิม (throw ต่อไป)
+    throw err;
   }
 }
 
@@ -312,12 +278,9 @@ exports.syncAcademyFromApi = async (ctx) => {
     // ✅ ดึง sar จาก API
     const sarResults = await mapPool(academyArray, SAR_CONCURRENCY, async (a) => {
       try {
-        const sarRes = await onesqaPost(
-          "/basics/get_sar",
-          { academy_code: a.code },
-          headers
-        );        
+        const sarRes = await onesqaPost("/basics/get_sar", { academy_code: a.code }, headers);
         const raw = Array.isArray(sarRes.data?.data) ? sarRes.data.data : [];
+
         const sar_file = raw
           .filter((x) => x && x.year != null && x.file)
           .map((x) => ({ year: String(x.year), file: x.file }))

@@ -1,7 +1,7 @@
 // utils/checkTokenQuota.js
-const db = require("../db/models"); // หรือ '../../db/models' ถ้าโปรเจกต์คุณใช้ path นั้น
+const db = require("../db/models");
 const { User_ai, Ai, User } = db;
-const { getLocale, getCurrentUser } = require("../utils/currentUser");
+const { getLocale } = require("../utils/currentUser");
 
 const DEFAULT_MIN_PERCENT = 15;
 
@@ -29,12 +29,13 @@ async function checkTokenQuota({ aiId, userId, minPercent = DEFAULT_MIN_PERCENT,
 
   const locale = await getLocale(ctx);
 
-  // ---- เช็คว่า user ได้รับอนุญาติให้ใช้งาน model ใหม ----
+  // ---- เช็คว่า user ได้รับอนุญาตให้ใช้งาน AI ไหม ----
   const checkStatusUser = await User.findOne({
     attributes: ["ai_access"],
-    where: { id: userId }
-  })
-  if (checkStatusUser.ai_access === false) {
+    where: { id: userId },
+  });
+
+  if (checkStatusUser?.ai_access === false) {
     throw new Error(
       locale === "th"
         ? "User นี้ถูกปิดการใช้งาน AI"
@@ -42,11 +43,20 @@ async function checkTokenQuota({ aiId, userId, minPercent = DEFAULT_MIN_PERCENT,
     );
   }
 
-  // ---- เช็คว่า token เปิดใช้งานอยู่ใหม ----
+  // ---- ✅ เช็คว่า model เปิดใช้งานอยู่ไหม + token ของ model ต้อง > 0 ----
   const checkStatusModel = await Ai.findOne({
-    attributes: ["activity"],
-    where: { id: aiId }
-  })
+    attributes: ["activity", "token_count", "token_all"],
+    where: { id: aiId },
+  });
+
+  if (!checkStatusModel) {
+    throw new Error(
+      locale === "th"
+        ? "ไม่พบข้อมูล Model"
+        : "Model was not found"
+    );
+  }
+
   if (checkStatusModel.activity === false) {
     throw new Error(
       locale === "th"
@@ -55,14 +65,25 @@ async function checkTokenQuota({ aiId, userId, minPercent = DEFAULT_MIN_PERCENT,
     );
   }
 
+  // ✅ เงื่อนไขใหม่: token ของ model <= 0 ห้ามทำต่อ
+  const modelTokenCount = Number(checkStatusModel.token_count ?? 0);
+  if (Number.isNaN(modelTokenCount) || modelTokenCount <= 0) {
+    throw new Error(
+      locale === "th"
+        ? "Token ของ Model หมดแล้ว ไม่สามารถใช้งานได้"
+        : "Model tokens are depleted. Unable to proceed."
+    );
+  }
+
+  // (ถ้าต้องการคุมด้วย % ของ model ด้วยในอนาคต ก็ใช้ calcPercent ได้)
+  // const all_percent = calcPercent(checkStatusModel.token_count, checkStatusModel.token_all);
+
   // ---- เช็ค token ของ user ----
   const checkUserToken = await User_ai.findOne({
     attributes: ["token_count", "token_all"],
-    where: {
-      ai_id: aiId,
-      user_id: userId,
-    },
+    where: { ai_id: aiId, user_id: userId },
   });
+
   if (!checkUserToken) {
     throw new Error(
       locale === "th"
@@ -70,21 +91,33 @@ async function checkTokenQuota({ aiId, userId, minPercent = DEFAULT_MIN_PERCENT,
         : "User token data for this AI was not found"
     );
   }
-  const user_percent = calcPercent(
-    checkUserToken.token_count,
-    checkUserToken.token_all
-  );
-  console.log("user_percent", user_percent);
-  if (user_percent < minPercent) {
+
+  // ✅ เงื่อนไขใหม่: token ของ user <= 0 ห้ามทำต่อ
+  const userTokenCount = Number(checkUserToken.token_count ?? 0);
+  if (Number.isNaN(userTokenCount) || userTokenCount <= 0) {
     throw new Error(
       locale === "th"
-        ? "Token ของผู้ใช้น้อยเกินไป ไม่สามารถแชตได้"
-        : "User has insufficient tokens to chat"
+        ? "Token ของผู้ใช้หมดแล้ว ไม่สามารถแชตได้"
+        : "User tokens are depleted. Unable to chat."
     );
   }
 
+  // ---- เช็ค % ของ user ตามเดิม ----
+  // const user_percent = calcPercent(checkUserToken.token_count, checkUserToken.token_all);
+  // console.log("user_percent", user_percent);
+
+  // if (user_percent < minPercent) {
+  //   throw new Error(
+  //     locale === "th"
+  //       ? "Token ของผู้ใช้น้อยเกินไป ไม่สามารถแชตได้"
+  //       : "User has insufficient tokens to chat"
+  //   );
+  // }
+
   // ถ้าผ่านทั้งสองเงื่อนไข return ค่าไว้เผื่อ debug / ใช้ต่อ
-  return { user_percent };
+  // return { user_percent };
+
+  return { userTokenCount };
 }
 
 module.exports = {

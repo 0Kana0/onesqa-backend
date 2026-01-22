@@ -1,29 +1,26 @@
 // utils/updateTokenAndNotify.js
 const { Op } = require("sequelize");
-const db = require("../db/models"); // หรือ '../../db/models' ถ้าโปรเจกต์คุณใช้ path นั้น
+const db = require("../db/models");
 const { Ai, User_ai, User, User_role } = db;
-const { calcPercent } = require("./checkTokenQuota"); 
-const { notifyUser } = require("./notifier"); // ที่ไฟล์ service/controller ของคุณ
-const { getLocale, getCurrentUser } = require("../utils/currentUser");
+const { calcPercent } = require("./checkTokenQuota");
+const { notifyUser } = require("./notifier");
+const { getLocale } = require("../utils/currentUser");
 
-// ↑ ถ้า util calcPercent อยู่ไฟล์อื่น / ชื่ออื่น ปรับ path ตามจริง
+// helper: format ตัวเลขให้อ่านง่าย
+function fmt(n, locale = "en-US") {
+  const num = Number(n) || 0;
+  return num.toLocaleString(locale);
+}
 
 /**
- * อัปเดต token (Ai + User_ai) แล้วเช็ค % เพื่อส่งแจ้งเตือน
- *
- * @param {Object} params
- * @param {Object} params.chatOne        - object แชทเดิม (ต้องมี ai.id, ai.model_use_name, user_id, user.email)
- * @param {number} params.usedTokens     - จำนวน token ที่ใช้ไปในการตอบครั้งนี้
- * @param {number} [params.thresholdPercent=15] - % เหลือน้อยกว่าค่านี้ให้แจ้งเตือน
- * @param {Object} [params.transaction]  - Sequelize transaction (optional)
- *
- * @returns {Promise<{ percentAi: number, percentUserAi: number }>}
+ * อัปเดต token (Ai + User_ai) แล้วเช็ค % / จำนวนคงเหลือ เพื่อส่งแจ้งเตือน
  */
 async function updateTokenAndNotify({
   ctx,
   chatOne,
   usedTokens,
   thresholdPercent = 15,
+  thresholdTokenCount = 1_000_000, // ✅ เพิ่ม threshold แบบจำนวน token คงเหลือ
   transaction,
 }) {
 
@@ -44,37 +41,27 @@ async function updateTokenAndNotify({
   // -------------------------
   // 1) อัปเดต token_count (หักออก)
   // -------------------------
-  const aiUpdateOptions = {
-    where: { id: aiId },
-  };
-  const userAiUpdateOptions = {
-    where: { ai_id: aiId, user_id: userId },
-  };
+  const aiUpdateOptions = { where: { id: aiId } };
+  const userAiUpdateOptions = { where: { ai_id: aiId, user_id: userId } };
   if (transaction) {
     aiUpdateOptions.transaction = transaction;
     userAiUpdateOptions.transaction = transaction;
   }
 
   await Ai.update(
-    {
-      token_count: Ai.sequelize.literal(`token_count - ${used}`),
-    },
+    { token_count: Ai.sequelize.literal(`token_count - ${used}`) },
     aiUpdateOptions
   );
 
   await User_ai.update(
-    {
-      token_count: User_ai.sequelize.literal(`token_count - ${used}`),
-    },
+    { token_count: User_ai.sequelize.literal(`token_count - ${used}`) },
     userAiUpdateOptions
   );
 
   // -------------------------
   // 2) โหลดค่าปัจจุบันหลังอัปเดต
   // -------------------------
-  const findAiOptions = {
-    attributes: ["token_count", "token_all", "is_notification"],
-  };
+  const findAiOptions = { attributes: ["token_count", "token_all", "is_notification"] };
   if (transaction) findAiOptions.transaction = transaction;
 
   const updatedAi = await Ai.findByPk(aiId, findAiOptions);
@@ -96,30 +83,34 @@ async function updateTokenAndNotify({
   }
 
   // -------------------------
-  // 3) คำนวณเปอร์เซ็นต์แบบกัน NaN (ใช้ calcPercent จาก util เดิม)
+  // 3) คำนวณเปอร์เซ็นต์คงเหลือ
   // -------------------------
   const percentAi = calcPercent(updatedAi.token_count, updatedAi.token_all);
-  const percentUserAi = calcPercent(
-    updatedUserAi.token_count,
-    updatedUserAi.token_all
-  );
-
-  console.log("percentAi", percentAi);
-  console.log("percentUserAi", percentUserAi);
+  const percentUserAi = calcPercent(updatedUserAi.token_count, updatedUserAi.token_all);
 
   // -------------------------
-  // 4) token ของทั้งระบบ: ส่งแจ้งเตือนให้ผู้ดูแลทั้งหมด (role_id = 3)
+  // ✅ 3.1) เงื่อนไขแจ้งเตือนแบบ “เปอร์เซ็นต์” หรือ “จำนวน token คงเหลือ”
   // -------------------------
-  if (percentAi < thresholdPercent && updatedAi?.is_notification === false) {
+  const aiRemain = Number(updatedAi.token_count) || 0;
+  const userRemain = Number(updatedUserAi.token_count) || 0;
+
+  const shouldNotifyAi =
+    (percentAi < thresholdPercent) || (aiRemain < thresholdTokenCount);
+
+  const shouldNotifyUserAi =
+    (percentUserAi < thresholdPercent) || (userRemain < thresholdTokenCount);
+
+  // -------------------------
+  // 4) token ของทั้งระบบ: ส่งแจ้งเตือนให้ผู้ดูแลทั้งหมด (role_id = 3/4)
+  // -------------------------
+  if (shouldNotifyAi && updatedAi?.is_notification === false) {
     const adminFindOptions = {
       attributes: ["id", "email", "locale", "loginAt"],
       include: [
         {
           model: User_role,
           as: "user_role",
-          where: { 
-            role_id: { [Op.in]: [3, 4] }   // role_id = 3 หรือ 4
-          },
+          where: { role_id: { [Op.in]: [3, 4] } },
           attributes: [],
         },
       ],
@@ -128,6 +119,17 @@ async function updateTokenAndNotify({
 
     const adminUsers = await User.findAll(adminFindOptions);
 
+    // สร้างเหตุผลเพื่อใส่ในข้อความ (จะได้รู้ว่าเตือนเพราะอะไร)
+    const reasonTH =
+      aiRemain < thresholdTokenCount
+        ? `คงเหลือ ${fmt(aiRemain, "th-TH")} token (ต่ำกว่า ${fmt(thresholdTokenCount, "th-TH")})`
+        : `คงเหลือ ${percentAi}% (ต่ำกว่า ${thresholdPercent}%)`;
+
+    const reasonEN =
+      aiRemain < thresholdTokenCount
+        ? `Remaining ${fmt(aiRemain, "en-US")} tokens (below ${fmt(thresholdTokenCount, "en-US")})`
+        : `Remaining ${percentAi}% (below ${thresholdPercent}%)`;
+
     for (const admin of adminUsers) {
       // ภาษาไทย
       await notifyUser({
@@ -135,8 +137,8 @@ async function updateTokenAndNotify({
         recipient_locale: admin.locale,
         loginAt: admin.loginAt,
         userId: admin.id,
-        title: "การใช้งาน Token เกินกำหนดของระบบ",
-        message: `การใช้งาน Token ของ Model ${chatOne?.ai?.model_use_name} อยู่ที่ 85% กรุณาติดตามการใช้งานอย่างใกล้ชิด`,
+        title: "การใช้งาน Token ใกล้ถึงขีดจำกัดของระบบ",
+        message: `Token ของ Model ${chatOne?.ai?.model_use_name} ${reasonTH} กรุณาติดตามการใช้งานอย่างใกล้ชิด`,
         type: "WARNING",
         to: admin.email,
         transaction,
@@ -148,8 +150,8 @@ async function updateTokenAndNotify({
         recipient_locale: admin.locale,
         loginAt: admin.loginAt,
         userId: admin.id,
-        title: "System Token Usage Limit Warning",
-        message: `Token usage for model ${chatOne?.ai?.model_use_name} has reached 85%. Please monitor usage closely.`,
+        title: "System Token Usage Warning",
+        message: `Model ${chatOne?.ai?.model_use_name}: ${reasonEN}. Please monitor usage closely.`,
         type: "WARNING",
         to: admin.email,
         transaction,
