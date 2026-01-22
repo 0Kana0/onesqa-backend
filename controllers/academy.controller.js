@@ -8,6 +8,7 @@ const moment = require("moment-timezone");
 const https = require("https");
 
 const httpsAgent = new https.Agent({
+  rejectUnauthorized: false,
   keepAlive: true,
   keepAliveMsecs: 10_000,
   maxSockets: 20,      // ปรับตามที่ไหว
