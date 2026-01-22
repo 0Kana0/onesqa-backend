@@ -134,7 +134,7 @@ exports.removeSarFiles = async ({ academy_id, files = [], ctx }) => {
 };
 
 // ✅ helper: ใช้เรียก ONESQA และถ้า ONESQA "ล่มจริง" ให้ throw ตามที่ต้องการ
-const ONESQA_TIMEOUT = 10000;
+const ONESQA_TIMEOUT = 30000;
 
 async function mapPool(items, limit, mapper) {
   const ret = new Array(items.length);
@@ -314,8 +314,7 @@ exports.syncAcademyFromApi = async (ctx) => {
         const sarRes = await onesqaPost(
           "/basics/get_sar",
           { academy_code: a.code },
-          headers,
-          { timeout: 30000, retries: 3 }
+          headers
         );        
         const raw = Array.isArray(sarRes.data?.data) ? sarRes.data.data : [];
         const sar_file = raw
