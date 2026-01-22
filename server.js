@@ -225,12 +225,25 @@ async function start() {
     })(req, res);
   });
 
-  // ✅ GraphiQL (ruru)
-  app.get("/", (_req, res) => {
+  // ✅ GraphiQL (ruru) - ทำให้ auto เป็น ws/wss ตาม https จริง
+  app.get("/", (req, res) => {
+    const xfProto = String(req.headers["x-forwarded-proto"] || "")
+      .split(",")[0]
+      .trim();
+    const proto = xfProto || req.protocol || "http";
+
+    const xfHost = String(req.headers["x-forwarded-host"] || "")
+      .split(",")[0]
+      .trim();
+    const host = xfHost || String(req.headers.host || "");
+
+    const wsProto = proto === "https" ? "wss" : "ws";
+    const subscriptionsEndpoint = `${wsProto}://${host}/graphql`;
+
     res.type("html").send(
       ruruHTML({
         endpoint: "/graphql",
-        subscriptionsEndpoint: `${WS_URL}:${PORT}/graphql`,
+        subscriptionsEndpoint,
       })
     );
   });
