@@ -45,7 +45,7 @@ exports.geminiGenerateImage = async (
     model,
     contents,
     config: {
-      responseModalities: ["Image"],
+      responseModalities: ["TEXT", "IMAGE"],
       imageConfig: { aspectRatio },
     },
   });
