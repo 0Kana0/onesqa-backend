@@ -3142,7 +3142,8 @@ exports.createMessageDoc = async (input, ctx) => {
       messageList,
       historyList,
       {
-        model: chatOne.ai.model_name,
+        //model: chatOne.ai.model_name,
+        model: "gemini-2.5-pro",
         outDir: "./uploads",
         fileBase: `${Date.now()}-gen-doc`,
       }
