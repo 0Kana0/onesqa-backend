@@ -28,7 +28,7 @@ exports.geminiGenerateVideo = async (
   historyList,
   messageList,
   {
-    model = "veo-3.1-generate-preview",
+    model = "veo-3.1-fast-generate-preview",
     outDir = "./uploads",
     fileBase = "veo-video",
     aspectRatio = "16:9", // "16:9" | "9:16"
@@ -37,6 +37,11 @@ exports.geminiGenerateVideo = async (
     timeoutMs = 10 * 60_000, // 10 นาที
     // optional: บังคับภาพเริ่มต้นเอง (ถ้าไม่อยากให้ auto-detect จาก messageList)
     inputImage, // { imageBytes: base64String, mimeType: "image/png" }
+
+    // ✅ เพิ่ม: นับ token ของ prompt ก่อนยิงงาน (default: true)
+    countTokens = true,
+    // ✅ เพิ่ม: ถ้า countTokens ด้วย veo ไม่ได้ ให้ fallback ไปโมเดลนี้
+    tokenCountFallbackModel = "gemini-2.0-flash",
   } = {}
 ) => {
   const ai = await getAI();
@@ -84,6 +89,38 @@ exports.geminiGenerateVideo = async (
   // ---------- 2) auto-detect image-to-video ----------
   const detectedImage = inputImage || extractFirstInlineImage(msgParts);
 
+  // ---------- ✅ 2.5) นับ token ของ prompt ----------
+  let tokenMeta = {
+    modelUsed: null,
+    fallbackUsed: false,
+    promptTokenCount: null,
+    totalTokens: null,
+  };
+
+  if (countTokens) {
+    try {
+      const r = await ai.models.countTokens({ model, contents: prompt });
+      tokenMeta = {
+        modelUsed: model,
+        fallbackUsed: false,
+        promptTokenCount: r?.totalTokens ?? null,
+        totalTokens: r?.totalTokens ?? null,
+      };
+    } catch (e) {
+      // fallback: นับด้วย gemini tokenizer (ประมาณการ)
+      const r = await ai.models.countTokens({
+        model: tokenCountFallbackModel,
+        contents: prompt,
+      });
+      tokenMeta = {
+        modelUsed: tokenCountFallbackModel,
+        fallbackUsed: true,
+        promptTokenCount: r?.totalTokens ?? null,
+        totalTokens: r?.totalTokens ?? null,
+      };
+    }
+  }
+
   // ---------- 3) สร้าง request ----------
   const req = {
     model,
@@ -124,11 +161,20 @@ exports.geminiGenerateVideo = async (
     downloadPath: outPath,
   });
 
+  // ✅ สำหรับระบบคุณ (เหมือนที่เก็บใน DB):
+  const input_token = tokenMeta?.promptTokenCount ?? 0;
+  const output_token = 0; // วิดีโอไม่ได้คืน token แบบข้อความ
+
   return {
     files: [outPath],
     text: "", // video generation ปกติไม่มี text output
     response: operation,
     prompt,
     usedImage: Boolean(detectedImage),
+
+    // ✅ เพิ่มกลับไปให้ใช้งาน
+    tokens: tokenMeta,
+    input_token,
+    output_token,
   };
 };

@@ -1576,7 +1576,7 @@ exports.createMessageVideo = async (input, ctx) => {
     ];
     console.log(messageList);
 
-    const { files, response } = await geminiGenerateVideo(
+    const { files, response, tokens, input_token, output_token } = await geminiGenerateVideo(
       historyList,
       messageList,
       {
@@ -1640,12 +1640,9 @@ exports.createMessageVideo = async (input, ctx) => {
         message_type: message_type,
         text: "",
         file: fileIdsStr,
-        input_token: response.usageMetadata.promptTokenCount,
-        output_token:
-          (response?.usageMetadata?.candidatesTokenCount ?? 0) +
-          (response?.usageMetadata?.thoughtsTokenCount ?? 0) +
-          (response?.usageMetadata?.toolUsePromptTokenCount ?? 0),
-        total_token: response.usageMetadata.totalTokenCount,
+        input_token: 0,
+        output_token: 0,
+        total_token: 0,
         chat_id: chat_id,
       });
 
