@@ -40,6 +40,38 @@ services:
         max-size: "10m"
         max-file: "5"
 
+  # ✅ Node Cronjob service
+  node:
+    image: naterkana/onesqa-cronjob:0.1
+    container_name: node-cronjob
+    restart: unless-stopped
+    ports:
+      - "5001:5000"
+
+    # ✅ โหลด environment จากไฟล์ .env
+    env_file:
+      - .env
+
+    environment:
+      NODE_OPTIONS: --max-old-space-size=4096
+      TZ: 'Asia/Bangkok'
+
+    # ✅ ให้แน่ใจว่า mount โฟลเดอร์โปรเจ็กต์ปัจจุบันเข้ามาใน container
+    volumes:
+      - .:/usr/src/app
+      - /etc/localtime:/etc/localtime:ro
+      - /etc/timezone:/etc/timezone:ro
+
+    # ✅ ใช้ path เต็มเพื่อเรียก script
+    command: sh /usr/src/app/entrypoint.sh
+
+    depends_on:
+      - postgres
+      - redis
+
+    networks:
+      - node-backend
+
   # ✅ Email Worker (BullMQ)
   email-worker:
     image: naterkana/onesqa-backend:0.1
