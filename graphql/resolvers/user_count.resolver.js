@@ -9,5 +9,11 @@ module.exports = {
       await checkUserInDB(ctx);
       return await UserCountController.CardUserCountReports();
     },
+    // ✅ เพิ่มอันนี้: กราฟจำนวนผู้ใช้รายวัน
+    chartUserCountReports: async (_parent, { startDate, endDate }, ctx) => {
+      requireAuth(ctx);
+      await checkUserInDB(ctx);
+      return await UserCountController.ChartUserCountReports({ startDate, endDate });
+    },
   },
 };

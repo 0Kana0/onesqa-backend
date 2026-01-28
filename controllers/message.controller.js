@@ -355,8 +355,8 @@ exports.createMessage = async (input, ctx) => {
     // ข้อความตามภาษา
     const systemPrompt =
       locale === "th"
-        ? `คุณคือผู้ช่วยส่วนตัว วันที่และเวลาปัจจุบันของประเทศไทยคือ ${nowTH} ก่อนตอบให้ใช้ Google Search เสมอ และอ้างอิงจากผลค้นหา`
-        : `You are a personal assistant. The current date and time in Thailand is ${nowTH} Always use Google Search before answering, then answer using the search results.`;
+        ? `คุณคือผู้ช่วยส่วนตัว วันที่และเวลาปัจจุบันของประเทศไทยคือ ${nowTH}`
+        : `You are a personal assistant. The current date and time in Thailand is ${nowTH}`;
 
     const modelReply =
       locale === "th"
@@ -1069,8 +1069,8 @@ exports.createMessageImage = async (input, ctx) => {
     // ข้อความตามภาษา
     const systemPrompt =
       locale === "th"
-        ? `คุณคือผู้ช่วยส่วนตัว วันที่และเวลาปัจจุบันของประเทศไทยคือ ${nowTH} ก่อนตอบให้ใช้ Google Search เสมอ และอ้างอิงจากผลค้นหา`
-        : `You are a personal assistant. The current date and time in Thailand is ${nowTH} Always use Google Search before answering, then answer using the search results.`;
+        ? `คุณคือผู้ช่วยส่วนตัว วันที่และเวลาปัจจุบันของประเทศไทยคือ ${nowTH}`
+        : `You are a personal assistant. The current date and time in Thailand is ${nowTH}`;
 
     const modelReply =
       locale === "th"
@@ -1445,8 +1445,8 @@ exports.createMessageImage = async (input, ctx) => {
     // ข้อความตามภาษา
     const systemPrompt =
       locale === "th"
-        ? `คุณคือผู้ช่วยส่วนตัว วันที่และเวลาปัจจุบันของประเทศไทยคือ ${nowTH} ก่อนตอบให้ใช้ Google Search เสมอ และอ้างอิงจากผลค้นหา`
-        : `You are a personal assistant. The current date and time in Thailand is ${nowTH} Always use Google Search before answering, then answer using the search results.`;
+        ? `คุณคือผู้ช่วยส่วนตัว วันที่และเวลาปัจจุบันของประเทศไทยคือ ${nowTH}`
+        : `You are a personal assistant. The current date and time in Thailand is ${nowTH}`;
 
     const modelReply =
       locale === "th"
@@ -1906,8 +1906,8 @@ exports.createMessageVideo = async (input, ctx) => {
     // ข้อความตามภาษา
     const systemPrompt =
       locale === "th"
-        ? `คุณคือผู้ช่วยส่วนตัว วันที่และเวลาปัจจุบันของประเทศไทยคือ ${nowTH} ก่อนตอบให้ใช้ Google Search เสมอ และอ้างอิงจากผลค้นหา`
-        : `You are a personal assistant. The current date and time in Thailand is ${nowTH} Always use Google Search before answering, then answer using the search results.`;
+        ? `คุณคือผู้ช่วยส่วนตัว วันที่และเวลาปัจจุบันของประเทศไทยคือ ${nowTH}`
+        : `You are a personal assistant. The current date and time in Thailand is ${nowTH}`;
 
     const modelReply =
       locale === "th"
@@ -2278,8 +2278,8 @@ exports.createMessageVideo = async (input, ctx) => {
     // ข้อความตามภาษา
     const systemPrompt =
       locale === "th"
-        ? `คุณคือผู้ช่วยส่วนตัว วันที่และเวลาปัจจุบันของประเทศไทยคือ ${nowTH} ก่อนตอบให้ใช้ Google Search เสมอ และอ้างอิงจากผลค้นหา`
-        : `You are a personal assistant. The current date and time in Thailand is ${nowTH} Always use Google Search before answering, then answer using the search results.`;
+        ? `คุณคือผู้ช่วยส่วนตัว วันที่และเวลาปัจจุบันของประเทศไทยคือ ${nowTH}`
+        : `You are a personal assistant. The current date and time in Thailand is ${nowTH}`;
 
     const modelReply =
       locale === "th"
@@ -2716,8 +2716,8 @@ exports.createMessageDoc = async (input, ctx) => {
     // ข้อความตามภาษา
     const systemPrompt =
       locale === "th"
-        ? `คุณคือผู้ช่วยส่วนตัว วันที่และเวลาปัจจุบันของประเทศไทยคือ ${nowTH} ก่อนตอบให้ใช้ Google Search เสมอ และอ้างอิงจากผลค้นหา`
-        : `You are a personal assistant. The current date and time in Thailand is ${nowTH} Always use Google Search before answering, then answer using the search results.`;
+        ? `คุณคือผู้ช่วยส่วนตัว วันที่และเวลาปัจจุบันของประเทศไทยคือ ${nowTH}`
+        : `You are a personal assistant. The current date and time in Thailand is ${nowTH}`;
 
     const modelReply =
       locale === "th"
@@ -3094,8 +3094,8 @@ exports.createMessageDoc = async (input, ctx) => {
     // ข้อความตามภาษา
     const systemPrompt =
       locale === "th"
-        ? `คุณคือผู้ช่วยส่วนตัว วันที่และเวลาปัจจุบันของประเทศไทยคือ ${nowTH} ก่อนตอบให้ใช้ Google Search เสมอ และอ้างอิงจากผลค้นหา`
-        : `You are a personal assistant. The current date and time in Thailand is ${nowTH} Always use Google Search before answering, then answer using the search results.`;
+        ? `คุณคือผู้ช่วยส่วนตัว วันที่และเวลาปัจจุบันของประเทศไทยคือ ${nowTH}`
+        : `You are a personal assistant. The current date and time in Thailand is ${nowTH}`;
 
     const modelReply =
       locale === "th"
@@ -3564,8 +3564,8 @@ exports.updateMessage = async (id, input, ctx) => {
     // ข้อความตามภาษา
     const systemPrompt =
       locale === "th"
-        ? `คุณคือผู้ช่วยส่วนตัว วันที่และเวลาปัจจุบันของประเทศไทยคือ ${nowTH} ก่อนตอบให้ใช้ Google Search เสมอ และอ้างอิงจากผลค้นหา`
-        : `You are a personal assistant. The current date and time in Thailand is ${nowTH} Always use Google Search before answering, then answer using the search results.`;
+        ? `คุณคือผู้ช่วยส่วนตัว วันที่และเวลาปัจจุบันของประเทศไทยคือ ${nowTH}`
+        : `You are a personal assistant. The current date and time in Thailand is ${nowTH}`;
 
     const modelReply =
       locale === "th"

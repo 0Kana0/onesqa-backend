@@ -908,18 +908,37 @@ exports.PeriodChartReports = async ({ period }) => {
   return events;
 };
 
-exports.TopFiveReports = async () => {
+exports.TopFiveReports = async ({ month, year } = {}) => {
   const TZ = "Asia/Bangkok";
 
-  const startOfMonthStr = moment.tz(TZ).startOf("month").format("YYYY-MM-DD");
-  const startOfNextMonthStr = moment
-    .tz(TZ)
-    .startOf("month")
-    .add(1, "month")
-    .format("YYYY-MM-DD");
+  // ---------- normalize params ----------
+  const now = moment.tz(TZ);
 
-  const startOfMonth = moment.tz(TZ).startOf("month").toDate();
-  const startOfNextMonth = moment.tz(TZ).startOf("month").add(1, "month").toDate();
+  let m = month ?? (now.month() + 1); // moment month = 0..11, แต่ param เราใช้ 1..12
+  let y = year ?? now.year();
+
+  m = Number(m);
+  y = Number(y);
+
+  if (!Number.isFinite(m) || m < 1 || m > 12) {
+    throw new Error("Invalid month (must be 1-12)");
+  }
+  if (!Number.isFinite(y) || y < 1900) {
+    throw new Error("Invalid year");
+  }
+
+  // รองรับปี พ.ศ. แบบเผื่อไว้ (ถ้าไม่ต้องการ ลบบล็อคนี้ได้)
+  if (y >= 2400) y = y - 543;
+
+  // ---------- build range [startOfMonth, startOfNextMonth) ----------
+  const startMoment = moment.tz({ year: y, month: m - 1, day: 1 }, TZ).startOf("day");
+  const nextMoment = startMoment.clone().add(1, "month");
+
+  const startOfMonthStr = startMoment.format("YYYY-MM-DD");
+  const startOfNextMonthStr = nextMoment.format("YYYY-MM-DD");
+
+  const startOfMonth = startMoment.toDate();
+  const startOfNextMonth = nextMoment.toDate();
 
   const sequelize = User_token.sequelize;
 
@@ -950,10 +969,8 @@ exports.TopFiveReports = async () => {
       COALESCE(mc.chats, 0) AS chats,
       ut.tokens AS tokens
     FROM ut_tokens ut
-    LEFT JOIN msg_chats mc
-      ON mc.user_id = ut.user_id
-    LEFT JOIN "user" u
-      ON u.id = ut.user_id
+    LEFT JOIN msg_chats mc ON mc.user_id = ut.user_id
+    LEFT JOIN "user" u ON u.id = ut.user_id
     ORDER BY ut.tokens DESC, ut.user_id DESC
     LIMIT 5;
   `;

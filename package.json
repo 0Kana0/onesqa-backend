@@ -25,6 +25,7 @@
     "bullmq": "^5.66.4",
     "cookie-parser": "^1.4.7",
     "cors": "^2.8.5",
+    "crypto": "^1.0.1",
     "dotenv": "^17.2.2",
     "exceljs": "^4.4.0",
     "express": "^5.1.0",

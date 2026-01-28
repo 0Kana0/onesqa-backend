@@ -21,19 +21,22 @@ module.exports = {
       },
       user_id: {
         type: Sequelize.INTEGER,
-        allowNull: true,               // ❗ ต้อง allowNull เพราะจะถูก set null
+        allowNull: false,
         references: {
-          model: 'user',
+          model: 'user', // ชื่อ table ใน DB
           key: 'id'
         },
-        onDelete: 'SET NULL',          // ✅ เวลา user ถูกลบ → ตัวนี้เป็น null
-        onUpdate: 'CASCADE'
+        onDelete: 'CASCADE', // ✅ สำคัญ!
       },
       active_type: {
         // อ้าง enum ที่สร้างไว้ด้วยชื่อ type โดยตรง
         type: 'enum_active_type',
         allowNull: false,
         defaultValue: 'LOGIN',
+      },
+      active_date: {
+        type: Sequelize.DATEONLY,
+        allowNull: false,
       },
       createdAt: {
         allowNull: false,
@@ -43,6 +46,13 @@ module.exports = {
         allowNull: false,
         type: Sequelize.DATE
       }
+    });
+
+    // ✅ กันซ้ำ: 1 user / 1 type / 1 วัน
+    await queryInterface.addConstraint('user_daily_active', {
+      fields: ['user_id', 'active_type', 'active_date'],
+      type: 'unique',
+      name: 'uq_user_daily_active_user_type_date',
     });
   },
   async down(queryInterface, Sequelize) {

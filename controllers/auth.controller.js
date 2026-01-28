@@ -2,6 +2,7 @@ const axios = require("axios");
 require("dotenv").config();
 const { Op } = require("sequelize");
 const moment = require("moment");
+const UAParser = require("ua-parser-js");
 
 const { hashPassword, comparePassword } = require("../utils/hash.js");
 const {
@@ -21,10 +22,10 @@ const {
 
 const db = require("../db/models");
 const { validateGroupInitTokenNotExceedAiTokenCount } = require("../utils/validateGroupInitToken.js");
-const { upsertMonthlyUserCountPlus } = require("../utils/upsertMonthlyUserCountPlus.js");
+const { upsertDailyUserCountPlus } = require("../utils/upsertDailyUserCountPlus.js");
 const { getLocale } = require("../utils/currentUser.js");
 const { setUserLoginHistory, setUserDailyActive } = require("../utils/userActive.js");
-const { User, RefreshToken, User_role, User_ai, Role, Ai, Group, Group_ai, User_count } = db;
+const { User, RefreshToken, User_role, User_ai, Role, Ai, Group, Group_ai } = db;
 const https = require("https");
 
 const httpsAgent = new https.Agent({ rejectUnauthorized: false });
@@ -82,6 +83,12 @@ exports.signin = async ({ username, password, locale }, ctx) => {
   }
 
   const SPECIAL_ID = "Admin01";
+
+  const officerRoleNameTH = "เจ้าหน้าที่";
+  const officerRoleNameEN = "officer";
+
+  const adminRoleNameTH = "ผู้ดูแลระบบ";
+  const adminRoleNameEN = "administrator";
 
   // 🔒 0) เช็กก่อนเลยว่าบัญชีนี้ถูกล็อกอยู่หรือไม่
   const ttl = await checkUserLocked(username);
@@ -181,6 +188,12 @@ exports.signin = async ({ username, password, locale }, ctx) => {
     where: { username } 
   });
 
+  // (แนะนำ) ช่วย normalize group_name กันเคสพิมพ์เล็ก/ใหญ่
+  const apiGroupName = String(response?.data?.data?.group_name ?? "").trim();
+  const isAdminGroup = apiGroupName.toLowerCase() === "admin";
+  const roleNameToAssignTH = isAdminGroup ? adminRoleNameTH : officerRoleNameTH;
+  const roleNameToAssignEN = isAdminGroup ? adminRoleNameEN : officerRoleNameEN;
+
   // ถ้า user นี้ยังไม่มีข้อมูลอยู่ใน db ให้นำข้อมูลจาก api มาสร้างข้อมูล user นี้เก็บไว้
   let userId;
   if (!exists) {
@@ -223,7 +236,7 @@ exports.signin = async ({ username, password, locale }, ctx) => {
 
     // บันทึกข้อมูล role ของผู้ใช้งาน
     const role_exists = await Role.findOne({
-      where: { role_name_th: "เจ้าหน้าที่" },
+      where: { role_name_th: roleNameToAssignTH },
     });
     const user_role = await User_role.create({
       user_id: userId,
@@ -247,7 +260,7 @@ exports.signin = async ({ username, password, locale }, ctx) => {
       });
     }
 
-    await upsertMonthlyUserCountPlus()
+    await upsertDailyUserCountPlus()
 
   // ถ้ามีข้อมูลอยู่แล้วให้นำข้อมูลจาก api มา update ข้อมูล user
   } else {
@@ -290,6 +303,12 @@ exports.signin = async ({ username, password, locale }, ctx) => {
     }
   }
 
+  const ua = ctx?.req?.headers["user-agent"] || "";
+  const parsed = new UAParser(ua).getResult();
+  
+  const browserName = parsed.browser.name;
+  const browserVersion = parsed.browser.version;
+
   // สร้าง token
   const payload = { username: username, id: userId };
   const accessToken = generateAccessToken(payload);
@@ -300,6 +319,7 @@ exports.signin = async ({ username, password, locale }, ctx) => {
     token: refreshToken,
     user_id: userId,
     expiresAt: moment().add(7, "days").toDate(),
+    user_agent: browserName + " " + browserVersion
   });
 
   // set cookie ผ่าน ctx.res (GraphQL มี res จาก context)
@@ -311,8 +331,8 @@ exports.signin = async ({ username, password, locale }, ctx) => {
     maxAge: 7 * 24 * 60 * 60 * 1000,
   });
 
-  setUserLoginHistory(userId, "LOGIN_SUCCESS", ctx)
-  setUserDailyActive(userId, "LOGIN")
+  await setUserLoginHistory(userId, "LOGIN_SUCCESS", ctx)
+  await setUserDailyActive(userId, "LOGIN")
 
   return {
     user: {
@@ -330,8 +350,8 @@ exports.signin = async ({ username, password, locale }, ctx) => {
       group_name: exists?.group_name ?? response.data.data.group_name,
       ai_access: exists?.ai_access ?? false,
       color_mode: exists?.color_mode ?? "LIGHT",
-      role_name_th: exists?.user_role[0]?.role?.role_name_th ?? "เจ้าหน้าที่",
-      role_name_en: exists?.user_role[0]?.role?.role_name_en ?? "เจ้าหน้าที่"
+      role_name_th: exists?.user_role[0]?.role?.role_name_th ?? roleNameToAssignTH,
+      role_name_en: exists?.user_role[0]?.role?.role_name_en ?? roleNameToAssignEN
     },
     token: accessToken,
   };
@@ -381,8 +401,8 @@ async function signinBackup({ username, password, locale }, ctx, rawErr) {
   if (exists.password === null) {
     const msg =
       locale === "th"
-        ? "รหัสผ่านยังไม่ถูกบันทึกสำรองไว้"
-        : "Password has not been backed up yet";
+        ? "ระบบ ONESQA ไม่พร้อมใช้งาน และรหัสผ่านยังไม่ถูกบันทึกสำรองไว้"
+        : "ONESQA system is unavailable and password has not been backed up yet";
 
     await handleFailedLogin(username, msg, locale);
     throw new Error(msg);
@@ -409,6 +429,12 @@ async function signinBackup({ username, password, locale }, ctx, rawErr) {
     { where: { username } }
   );
 
+  const ua = ctx?.req?.headers["user-agent"] || "";
+  const parsed = new UAParser(ua).getResult();
+  
+  const browserName = parsed.browser.name;
+  const browserVersion = parsed.browser.version;
+
   // ออก token เหมือนเดิม
   const userId = exists.id;
   const payload = { username: username, id: userId };
@@ -419,6 +445,7 @@ async function signinBackup({ username, password, locale }, ctx, rawErr) {
     token: refreshToken,
     user_id: userId,
     expiresAt: moment().add(7, "days").toDate(),
+    user_agent: browserName + " " + browserVersion
   });
 
   ctx.res.cookie("refreshToken", refreshToken, {
@@ -429,8 +456,8 @@ async function signinBackup({ username, password, locale }, ctx, rawErr) {
     maxAge: 7 * 24 * 60 * 60 * 1000,
   });
 
-  setUserLoginHistory(userId, "LOGIN_SUCCESS", ctx)
-  setUserDailyActive(userId, "LOGIN")
+  await setUserLoginHistory(userId, "LOGIN_SUCCESS", ctx)
+  await setUserDailyActive(userId, "LOGIN")
 
   return {
     user: {
@@ -633,7 +660,7 @@ exports.signinWithIdennumber = async ({ idennumber, otp_type, locale }, ctx) => 
       });
     }
 
-    await upsertMonthlyUserCountPlus()
+    await upsertDailyUserCountPlus()
     
   } else {
     userId = exists.id;
@@ -917,6 +944,12 @@ exports.verifySigninWithIdennumber = async ({ idennumber, otp, locale }, ctx) =>
     loginAt: moment(),
   }, { where: { id: existUser?.id } })
 
+  const ua = ctx?.req?.headers["user-agent"] || "";
+  const parsed = new UAParser(ua).getResult();
+  
+  const browserName = parsed.browser.name;
+  const browserVersion = parsed.browser.version;
+
   // สร้าง token
   const payload = { username: idennumber, id: existUser.id };
   const accessToken = generateAccessToken(payload);
@@ -927,6 +960,7 @@ exports.verifySigninWithIdennumber = async ({ idennumber, otp, locale }, ctx) =>
     token: refreshToken,
     user_id: existUser.id,
     expiresAt: moment().add(7, "days").toDate(),
+    user_agent: browserName + " " + browserVersion
   });
 
   // ส่ง refresh token ผ่าน cookie
@@ -938,8 +972,8 @@ exports.verifySigninWithIdennumber = async ({ idennumber, otp, locale }, ctx) =>
     maxAge: 7 * 24 * 60 * 60 * 1000,
   });
 
-  setUserLoginHistory(existUser?.id, "LOGIN_SUCCESS", ctx)
-  setUserDailyActive(existUser?.id, "LOGIN")
+  await setUserLoginHistory(existUser?.id, "LOGIN_SUCCESS", ctx)
+  await setUserDailyActive(existUser?.id, "LOGIN")
 
   return {
     user: {
@@ -1001,16 +1035,24 @@ exports.refreshToken = async (ctx) => {
     ],
     where: { username: decoded.username },
   });
+
+  const ua = ctx?.req?.headers["user-agent"] || "";
+  const parsed = new UAParser(ua).getResult();
+  
+  const browserName = parsed.browser.name;
+  const browserVersion = parsed.browser.version;
+
   // สร้าง token ใหม่
   const payload = { username: decoded.username, id: decoded.id };
   const newAccessToken = generateAccessToken(payload);
   const newRefreshToken = generateRefreshToken(payload);
 
   // เก็บ refreshToken ที่สร้างใหม่ใน db
-  await RefreshToken.update(
-    { token: newRefreshToken, expiresAt: moment().add(7, "days").toDate() },
-    { where: { id: existing.id } }
-  );
+  await RefreshToken.update({ 
+    token: newRefreshToken, 
+    expiresAt: moment().add(7, "days").toDate(),
+    user_agent: browserName + " " + browserVersion
+  }, { where: { id: existing.id } });
 
   // ส่ง refreshtoken ที่สร้างใหม่ผ่าน cookie
   ctx.res.cookie("refreshToken", newRefreshToken, {

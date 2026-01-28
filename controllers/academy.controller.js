@@ -189,7 +189,7 @@ async function onesqaPost(endpoint, data, headers) {
 const ACADEMY_PAGE_CONCURRENCY = 3;
 const SAR_CONCURRENCY = 5;
 
-exports.syncAcademyFromApi = async (ctx) => {
+exports.syncAcademyFromApi = async () => {
   const headers = {
     Accept: "application/json",
     "X-Auth-ID": process.env.X_AUTH_ID,

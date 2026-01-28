@@ -121,3 +121,11 @@ exports.listUsersLoginHistory = async ({ page, pageSize, where = {} }) => {
 
   return { items, page: p, pageSize: limit, totalCount: count };
 };
+
+exports.deleteLoginHistorys = async () => {
+  const count = await User_login_history.destroy({
+    where: {}, // ✅ ไม่มีเงื่อนไข = ลบทั้งหมด
+    truncate: true, // ✅ ล้างตารางแบบรีเซ็ต auto-increment ด้วย
+  });
+  return count >= 0; // ✅ คืน true เสมอหากลบสำเร็จ
+};

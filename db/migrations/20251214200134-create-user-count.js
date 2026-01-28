@@ -12,6 +12,10 @@ module.exports = {
       total_user: {
         type: Sequelize.INTEGER
       },
+      count_date: {
+        type: Sequelize.DATEONLY,
+        allowNull: false,
+      },
       createdAt: {
         allowNull: false,
         type: Sequelize.DATE

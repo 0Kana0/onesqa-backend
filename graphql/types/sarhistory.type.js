@@ -42,4 +42,8 @@ module.exports = `
       where: SarHistoryFilterInput
     ): SarHistoryPage!
   }
+
+  extend type Mutation {
+    deleteSarHistorys: Boolean!
+  }
 `;

@@ -48,36 +48,21 @@ async function setUserDailyActive(user_id, active_type) {
   if (!findUser) return null;
   if (findUser.username === SPECIAL_ID) return null;
 
-  // ทำให้ updateAt เปลี่ยนค่า
+  // อัปเดต user แบบไม่ให้ hook วนซ้ำ
   await User.update(
-    { login_type: findUser?.login_type },
-    { where: { id: user_id } }
+    { login_type: findUser.login_type },
+    { where: { id: user_id }, hooks: false }
   );
 
-  // ✅ ช่วง "วันนี้" ตามเวลาไทย
-  const startOfToday = moment.tz(TZ).startOf("day").toDate();
-  const startOfTomorrow = moment.tz(TZ).add(1, "day").startOf("day").toDate();
+  const active_date = moment.tz(TZ).format("YYYY-MM-DD");
 
-  // ✅ ถ้า active_type ของผู้ใช้งานนี้ "วันนี้" มีอยู่แล้วไม่ต้องบันทึก
-  const findDailyActive = await User_daily_active.findOne({
-    where: {
-      user_id,
-      active_type,
-      createdAt: {
-        [Op.gte]: startOfToday,
-        [Op.lt]: startOfTomorrow,
-      },
-    },
-  });
-
-  if (findDailyActive) return null;
-
-  const dailyActive = await User_daily_active.create({
-    user_id,
-    active_type,
-  });
-
-  return dailyActive;
+  try {
+    // ✅ atomic จริง: INSERT อย่างเดียว + DB unique กันซ้ำ
+    return await User_daily_active.create({ user_id, active_type, active_date });
+  } catch (err) {
+    if (err?.name === "SequelizeUniqueConstraintError") return null;
+    throw err;
+  }
 }
 
 module.exports = { setUserLoginHistory, setUserDailyActive };

@@ -75,4 +75,8 @@ module.exports = `
       where: UserLoginHistoryFilterInput
     ): UserLoginHistoryPage!
   }
+
+  extend type Mutation {
+    deleteLoginHistorys: Boolean!
+  }
 `;

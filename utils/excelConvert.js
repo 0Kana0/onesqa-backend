@@ -10,11 +10,26 @@ exports.extractTextFromExcel = async (filePath) => {
 
   const text = sheetNames
     .map((sheetName) => {
+      function isEmpty(v) {
+        return v === undefined || v === null || String(v).trim() === "";
+      }
+
+      function trimRow(row) {
+        let end = row.length - 1;
+        while (end >= 0 && isEmpty(row[end])) end--;
+        return row.slice(0, end + 1);
+      }
+
       const sheetData = XLSX.utils.sheet_to_json(workbook.Sheets[sheetName], {
-        header: 1, // คืนค่าเป็น array ของแถว
+        header: 1,
+        blankrows: false,
       });
 
-      const tableText = sheetData.map((row) => row.join("\t")).join("\n");
+      const cleaned = sheetData
+        .map(r => trimRow(r).map(v => (v == null ? "" : String(v))))
+        .filter(r => r.length && r.some(v => !isEmpty(v)));
+
+      const tableText = cleaned.map(r => r.join("\t")).join("\n");
 
       // รวมชื่อชีทกับเนื้อหา
       return `=== Sheet: ${sheetName} ===\n${tableText}`;

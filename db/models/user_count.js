@@ -14,7 +14,8 @@ module.exports = (sequelize, DataTypes) => {
     }
   }
   User_count.init({
-    total_user: DataTypes.INTEGER
+    total_user: DataTypes.INTEGER,
+    count_date: { type: DataTypes.DATEONLY, allowNull: false },
   }, {
     sequelize,
     freezeTableName: true,

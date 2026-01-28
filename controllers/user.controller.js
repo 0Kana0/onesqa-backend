@@ -688,6 +688,64 @@ async function onesqaPost(endpoint, data, headers) {
   }
 }
 
+async function upsertUserCountDaily(totalUser) {
+  const today = moment.tz(TZ).startOf("day");
+  const todayStr = today.format("YYYY-MM-DD");
+
+  // หาแถวล่าสุด (อิง count_date)
+  const lastRow = await User_count.findOne({
+    order: [["count_date", "DESC"]],
+    raw: true,
+  });
+
+  const lastDate = lastRow?.count_date
+    ? moment.tz(String(lastRow.count_date), TZ).startOf("day")
+    : null;
+
+  // ค่าไว้เติมวันที่ขาด (6-9) ใช้ค่าล่าสุดที่มีอยู่ ไม่งั้น 0
+  const carry = lastRow ? Number(lastRow.total_user) || 0 : 0;
+
+  // 1) Backfill วันขาด: จากวันถัดจาก lastDate -> เมื่อวาน
+  if (lastDate && lastDate.isBefore(today, "day")) {
+    const rows = [];
+    for (
+      let d = lastDate.clone().add(1, "day");
+      d.isBefore(today, "day");
+      d.add(1, "day")
+    ) {
+      rows.push({
+        count_date: d.format("YYYY-MM-DD"),
+        total_user: carry,
+      });
+    }
+
+    if (rows.length) {
+      await User_count.bulkCreate(rows, { ignoreDuplicates: true });
+      console.log(
+        `📊 Backfilled user_count: ${rows[0].count_date} -> ${rows[rows.length - 1].count_date} (total_user=${carry})`
+      );
+    }
+  }
+
+  // 2) Upsert ของวันนี้ด้วยค่าที่คำนวณจาก API จริง
+  // ถ้ามีแล้วให้ update, ไม่มีให้ create
+  const [row, created] = await User_count.findOrCreate({
+    where: { count_date: todayStr },
+    defaults: { total_user: totalUser },
+  });
+
+  if (!created) {
+    await User_count.update(
+      { total_user: totalUser },
+      { where: { count_date: todayStr } }
+    );
+    console.log(`📊 Updated user_count today (${todayStr}) total_user=${totalUser}`);
+  } else {
+    console.log(`📊 Created user_count today (${todayStr}) total_user=${totalUser}`);
+  }
+
+  return { count_date: todayStr, total_user: totalUser };
+}
 exports.syncUsersFromApi = async () => {
   let staffApiCount = 0;
   let assessorApiCount = 0;
@@ -695,6 +753,7 @@ exports.syncUsersFromApi = async () => {
   const SPECIAL_ID = "Admin01";
 
   const officerRoleName = "เจ้าหน้าที่";
+  const adminRoleName = "ผู้ดูแลระบบ";
 
   const assessorGroupName = "กลุ่มผู้ประเมินภายนอก";
   const assessorRoleName = "ผู้ประเมินภายนอก";
@@ -923,21 +982,36 @@ exports.syncUsersFromApi = async () => {
 
   // ส่วนของข้อมูล เจ้าหน้าที่
   try {
-    // ✅ หา role_id ของ "เจ้าหน้าที่" ก่อน (ทำครั้งเดียว)
-    const officerRole = await Role.findOne({
-      where: { role_name_th: officerRoleName },
-      attributes: ["id"],
-      raw: true,
-    });
+    // ✅ หา role_id ของ "เจ้าหน้าที่" และ "ผู้ดูแลระบบ" ก่อน (ทำครั้งเดียว)
+    const [officerRole, adminRole] = await Promise.all([
+      Role.findOne({
+        where: { role_name_th: officerRoleName },
+        attributes: ["id"],
+        raw: true,
+      }),
+      Role.findOne({
+        where: { role_name_th: adminRoleName },
+        attributes: ["id"],
+        raw: true,
+      }),
+    ]);
 
     if (!officerRole?.id) {
       throw new Error(
         locale === "th"
-          ? 'ไม่พบ Role ที่ role_name === "เจ้าหน้าที่"'
-          : 'Role not found where role_name === "officer"'
+          ? `ไม่พบ Role: ${officerRoleName}`
+          : `Role not found: ${officerRoleName}`
+      );
+    }
+    if (!adminRole?.id) {
+      throw new Error(
+        locale === "th"
+          ? `ไม่พบ Role: ${adminRoleName}`
+          : `Role not found: ${adminRoleName}`
       );
     }
     const officerRoleId = officerRole.id;
+    const adminRoleId = adminRole.id;
 
     let created = 0;
     let updated = 0;
@@ -968,6 +1042,9 @@ exports.syncUsersFromApi = async () => {
         const apiUsernames = users
           .map((u) => (u?.username || "").trim())
           .filter((x) => x && x !== SPECIAL_ID);
+
+        const isAdminGroup = String(g?.name ?? "").trim().toLowerCase() === "admin";
+        const roleIdForGroup = isAdminGroup ? adminRoleId : officerRoleId;
 
         await db.sequelize.transaction(async (t) => {
           // =========================
@@ -1059,18 +1136,21 @@ exports.syncUsersFromApi = async () => {
             // =========================
             // 3) สร้าง user_role (role = "เจ้าหน้าที่") ถ้ายังไม่มี
             // =========================
-            const existingUserRole = await User_role.findOne({
-              where: { user_id: userRow.id, role_id: officerRoleId },
-              transaction: t,
-              lock: t.LOCK.UPDATE,
-            });
+            // ✅ บันทึก role เฉพาะ "ครั้งแรก" (user ใหม่)
+            if (isNewUser) {
+              const existingUserRole = await User_role.findOne({
+                where: { user_id: userRow.id, role_id: roleIdForGroup },
+                transaction: t,
+                lock: t.LOCK.UPDATE,
+              });
 
-            if (!existingUserRole) {
-              await User_role.create(
-                { user_id: userRow.id, role_id: officerRoleId },
-                { transaction: t }
-              );
-              userRoleCreated++;
+              if (!existingUserRole) {
+                await User_role.create(
+                  { user_id: userRow.id, role_id: roleIdForGroup },
+                  { transaction: t }
+                );
+                userRoleCreated++;
+              }
             }
 
             // =========================
@@ -1266,18 +1346,21 @@ exports.syncUsersFromApi = async () => {
         }
 
         // 3.3) สร้าง user_role = ผู้ประเมินภายนอก ถ้ายังไม่มี
-        const existingUserRole = await User_role.findOne({
-          where: { user_id: userRow.id, role_id: assessorRoleId },
-          transaction: t,
-          lock: t.LOCK.UPDATE,
-        });
+        // ✅ role: ทำเฉพาะ "user ใหม่" เท่านั้น (คนเดิมไม่แตะ role)
+        if (isNewUser) {
+          const existingUserRole = await User_role.findOne({
+            where: { user_id: userRow.id, role_id: assessorRoleId },
+            transaction: t,
+            lock: t.LOCK.UPDATE,
+          });
 
-        if (!existingUserRole) {
-          await User_role.create(
-            { user_id: userRow.id, role_id: assessorRoleId },
-            { transaction: t }
-          );
-          userRoleCreated++;
+          if (!existingUserRole) {
+            await User_role.create(
+              { user_id: userRow.id, role_id: assessorRoleId },
+              { transaction: t }
+            );
+            userRoleCreated++;
+          }
         }
 
         // 3.4) user_ai: ถ้า user ใหม่ -> create token ตาม init_token
@@ -1332,44 +1415,14 @@ exports.syncUsersFromApi = async () => {
     if (err.response) console.error("response data:", err.response.data);
   }
 
-  const startOfThisMonth = moment.tz(TZ).startOf("month").toDate();
-  const endOfThisMonth = moment.tz(TZ).endOf("month").toDate();
+    // 🔢 นับจำนวน user ทั้งหมดจริงจากระบบ
+  const totalUser = staffApiCount + assessorApiCount;
 
-  // เก็บข้อมูลจำนวนผู้ใช้งานทั้งหมด
-  // ❗ ป้องกันสร้างซ้ำ
-  const exists = await User_count.findOne({
-    where: {
-      createdAt: {
-        [Op.between]: [startOfThisMonth, endOfThisMonth],
-      },
-    },
-  });
-  // 🔢 นับจำนวน user ทั้งหมดจริงจากระบบ
-  const totalUser = staffApiCount + assessorApiCount
-  // ถ้ามีข้อมูลแล้ว → update
-  if (exists) {
-    await exists.update({
-      total_user: totalUser,
-    });
+  // ✅ บันทึกแบบรายวัน + backfill วันที่ขาด
+  await upsertUserCountDaily(totalUser);
 
-    console.log(
-      `📊 Updated user_count (month=${moment.tz(TZ).format("YYYY-MM")}, total_user=${totalUser})`
-    );
-
-  // ถ้าไม่มีข้อมูลแล้ว → create
-  } else {
-    await User_count.create({
-      total_user: totalUser,
-    });
-
-    console.log(
-      `📊 Created user_count (month=${moment.tz(TZ).format("YYYY-MM")}, total_user=${totalUser})`
-    );
-  }
-
-  // ✅ return ผลรวมจำนวน user ของทั้งสอง api
   return {
-    totalUsersFromApis: staffApiCount + assessorApiCount,
+    totalUsersFromApis: totalUser,
     staffApiCount,
     assessorApiCount,
   };

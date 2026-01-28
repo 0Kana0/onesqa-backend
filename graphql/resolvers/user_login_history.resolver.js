@@ -10,4 +10,11 @@ module.exports = {
       return await UserLoginHistoryController.listUsersLoginHistory({ page, pageSize, where });
     },
   },
+  Mutation: {
+    deleteLoginHistorys: async (_paren, args, ctx) => {
+      requireAuth(ctx); // ต้องล็อกอินก่อน
+      await checkUserInDB(ctx);
+      return await UserLoginHistoryController.deleteLoginHistorys();
+    },
+  },
 };

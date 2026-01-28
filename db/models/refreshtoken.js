@@ -22,6 +22,7 @@ module.exports = (sequelize, DataTypes) => {
     token: DataTypes.STRING,
     user_id: DataTypes.INTEGER,
     expiresAt: DataTypes.DATE,
+    user_agent: DataTypes.STRING
   }, {
     sequelize,
     freezeTableName: true,

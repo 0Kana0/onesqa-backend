@@ -10,4 +10,11 @@ module.exports = {
       return await SarHistoryController.listSarHistory({ page, pageSize, where });
     },
   },
+  Mutation: {
+    deleteSarHistorys: async (_paren, args, ctx) => {
+      requireAuth(ctx); // ต้องล็อกอินก่อน
+      await checkUserInDB(ctx);
+      return await SarHistoryController.deleteSarHistorys();
+    },
+  },
 };

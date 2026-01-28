@@ -80,13 +80,11 @@ module.exports = `
 
   extend type Query {
     reports(page: Int, pageSize: Int, where: ReportFilterInput): ReportPage!
-    # ✅ NEW: ตารางตาม DataFilter
     periodReports(page: Int, pageSize: Int, period: PeriodInput!, search: String): PeriodReportPage!
     cardMessageReports: CardReport!
     cardTokenReports: CardReport!
     chartReports(startDate: DateTime, endDate: DateTime): [ChartReport!]!
-    # ✅ เพิ่มใหม่: สำหรับกราฟตาม DataFilter (รายวัน/เดือน/ปี)
     periodChartReports(period: PeriodInput!): [PeriodChartEvent!]!
-    topFiveReports: [TopFiveReport!]!
+    topFiveReports(month: Int, year: Int): [TopFiveReport!]!
   }
 `;

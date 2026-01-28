@@ -34,10 +34,10 @@ module.exports = {
       await checkUserInDB(ctx);
       return await ReportController.PeriodChartReports({ period });
     },
-    topFiveReports: async (_parent, args, ctx) => {
+    topFiveReports: async (_parent, { month, year }, ctx) => {
       requireAuth(ctx); // ต้องล็อกอินก่อน
       await checkUserInDB(ctx);
-      return await ReportController.TopFiveReports();
+      return await ReportController.TopFiveReports({ month, year });
     },
   },
 };
