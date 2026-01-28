@@ -2,7 +2,7 @@ version: "3.9"
 
 services:
   # ✅ Node backend service
-  node:
+  node-backend:
     image: naterkana/onesqa-backend:0.1
     container_name: node-backend
     restart: unless-stopped
@@ -41,7 +41,7 @@ services:
         max-file: "5"
 
   # ✅ Node Cronjob service
-  node:
+  node-cronjob:
     image: naterkana/onesqa-cronjob:0.1
     container_name: node-cronjob
     restart: unless-stopped
