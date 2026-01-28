@@ -15,7 +15,7 @@ const cookieParser = require("cookie-parser");
 const cors = require("cors");
 
 const verifyToken = require("./middleware/auth-middleware");
-//const { startDailyJobs } = require("./cron/dailyJob");
+const { startDailyJobs } = require("./cron/dailyJob");
 
 // ✅ LOG
 const pino = require("pino");
@@ -252,7 +252,7 @@ async function start() {
   app.use("/uploads", express.static(path.join(__dirname, "uploads")));
 
   // ✅ cronjob
-  //startDailyJobs();
+  startDailyJobs();
 
   // ✅ WS Subscriptions
   const wsServer = new WebSocketServer({
