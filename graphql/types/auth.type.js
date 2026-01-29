@@ -73,5 +73,6 @@ module.exports = `
     verifySigninWithIdennumber(input: VerifySigninWithIdInput!): AuthPayload!
     refreshToken: AuthPayload!                                  # ใช้ cookie
     logout: Message!
+    signinFromAQA(username: String!, aqa_code: String!): AuthPayload!    
   }
 `;

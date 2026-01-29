@@ -1098,3 +1098,102 @@ exports.logout = async (ctx) => {
     message: deleted === 0 ? "ไม่พบ refreshtoken ใน database" : "logout สำเร็จ",
   };
 };
+
+// ---------- 6) login จากระบบ AQA ----------
+exports.signinFromAQA = async (username, aqa_code, ctx) => {
+  if (!username) {
+    throw new Error("Username must not be empty");
+  }
+  if (!aqa_code) {
+    throw new Error("AQA_CODE must not be empty");
+  }
+  
+  if (aqa_code !== process.env.AQA_CODE) {
+    throw new Error("Incorrect AQA_CODE");
+  }
+
+  // ตรวจสอบว่าชื่อผู้ใช้คนนี้มีใน database มั้ย
+  const exists = await User.findOne({ 
+    include: [
+      {
+        model: User_role,
+        as: "user_role",
+        include: [
+          {
+            model: Role,
+            as: "role", // ต้องตรงกับ alias ใน User_role.belongsTo(...)
+            attributes: ["role_name_th", "role_name_en"], // << ดึงชื่อ role ตรงนี้
+            required: false,
+          },
+        ],
+      }
+    ],
+    where: { username } 
+  });
+
+  let userId;
+  // ถ้า user นี้ไม่มีข้อมูลอยู่ใน db
+  if (!exists) {
+    throw new Error("User not found");
+  }
+
+  // ถ้า user นี้ไม่ใช่เจ้าหน้าที่สมศ
+  if (exists?.login_type !== "NORMAL") {
+    throw new Error("Incorrect login_type");
+  }
+
+  userId = exists?.id; // ✅ สำคัญ
+
+  const ua = ctx?.req?.headers["user-agent"] || "";
+  const parsed = new UAParser(ua).getResult();
+  
+  const browserName = parsed.browser.name;
+  const browserVersion = parsed.browser.version;
+
+  // สร้าง token
+  const payload = { username: username, id: userId };
+  const accessToken = generateAccessToken(payload);
+  const refreshToken = generateRefreshToken(payload);
+
+  // เก็บ refreshToken ใน db
+  await RefreshToken.create({
+    token: refreshToken,
+    user_id: userId,
+    expiresAt: moment().add(7, "days").toDate(),
+    user_agent: browserName + " " + browserVersion
+  });
+
+  // set cookie ผ่าน ctx.res (GraphQL มี res จาก context)
+  ctx.res.cookie("refreshToken", refreshToken, {
+    httpOnly: true,
+    secure: false,
+    sameSite: "strict",
+    path: "/",
+    maxAge: 7 * 24 * 60 * 60 * 1000,
+  });
+
+  await setUserLoginHistory(userId, "LOGIN_SUCCESS", ctx)
+  await setUserDailyActive(userId, "LOGIN")
+
+  return {
+    user: {
+      id: userId,
+      //username: exists?.username ?? response.data.data.username,
+      firstname: exists?.firstname ?? response.data.data.fname,
+      lastname: exists?.lastname ?? response.data.data.lname,
+      phone: exists?.phone ?? "",
+      email: exists?.email ?? response.data.data.email,
+      login_type: exists?.login_type ?? "NORMAL",
+      locale: exists?.locale ?? "th",
+      alert: exists?.alert ?? false,
+      is_online: true,
+      position: exists?.position ?? response.data.data.position,
+      group_name: exists?.group_name ?? response.data.data.group_name,
+      ai_access: exists?.ai_access ?? false,
+      color_mode: exists?.color_mode ?? "LIGHT",
+      role_name_th: exists?.user_role[0]?.role?.role_name_th ?? roleNameToAssignTH,
+      role_name_en: exists?.user_role[0]?.role?.role_name_en ?? roleNameToAssignEN
+    },
+    token: accessToken,
+  };
+}

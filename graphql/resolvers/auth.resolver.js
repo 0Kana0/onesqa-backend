@@ -25,5 +25,8 @@ module.exports = {
     logout: async (_parent, _a, ctx) => {
       return await AuthController.logout(ctx)
     },
+    signinFromAQA: async (_parent, { username, aqa_code }, ctx) => {
+      return await AuthController.signinFromAQA(username, aqa_code, ctx)
+    },
   },
 };
