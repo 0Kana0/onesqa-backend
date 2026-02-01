@@ -47,7 +47,7 @@ services:
     restart: unless-stopped
 
     env_file:
-      - .env
+      - ../env
 
     environment:
       TZ: "Asia/Bangkok"
