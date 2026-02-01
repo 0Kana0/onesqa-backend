@@ -43,7 +43,7 @@ exports.listGroups = async ({ page, pageSize, where: filters = {} } = {}) => {
   const aiInclude = {
     model: Ai,
     as: "ai",
-    attributes: ["id", "model_name", "model_use_name", "model_type"],
+    attributes: ["id", "model_name", "model_use_name", "model_type", "message_type"],
     required: false,
   };
 
@@ -75,7 +75,7 @@ exports.listGroups = async ({ page, pageSize, where: filters = {} } = {}) => {
           {
             model: Ai,
             as: "ai",
-            attributes: ["id", "model_name", "model_use_name", "model_type"],
+            attributes: ["id", "model_name", "model_use_name", "model_type", "message_type"],
             required: false,
           },
         ],
@@ -267,7 +267,7 @@ exports.getGroupById = async (id) => {
       {
         model: Ai,
         as: "ai",
-        attributes: ["id", "model_name", "model_use_name", "model_type"],
+        attributes: ["id", "model_name", "model_use_name", "model_type", "message_type"],
         required: false,
       },
       {
@@ -278,7 +278,7 @@ exports.getGroupById = async (id) => {
           {
             model: Ai,
             as: "ai",
-            attributes: ["id", "model_name", "model_use_name", "model_type"],
+            attributes: ["id", "model_name", "model_use_name", "model_type", "message_type"],
           },
         ],
         required: false,
@@ -294,7 +294,7 @@ exports.getGroupByName = async (name) => {
       {
         model: Ai,
         as: "ai",
-        attributes: ["id", "model_name", "model_use_name", "model_type"],
+        attributes: ["id", "model_name", "model_use_name", "model_type", "message_type"],
         required: false,
       },
       {
@@ -305,7 +305,7 @@ exports.getGroupByName = async (name) => {
           {
             model: Ai,
             as: "ai",
-            attributes: ["id", "model_name", "model_use_name", "model_type"],
+            attributes: ["id", "model_name", "model_use_name", "model_type", "message_type"],
           },
         ],
         required: false,
@@ -869,7 +869,7 @@ exports.updateGroup = async (id, input, ctx) => {
       {
         model: Ai,
         as: "ai",
-        attributes: ["id", "model_name", "model_use_name", "model_type"],
+        attributes: ["id", "model_name", "model_use_name", "model_type", "message_type"],
       },
       {
         model: Group_ai,
@@ -879,7 +879,7 @@ exports.updateGroup = async (id, input, ctx) => {
           {
             model: Ai,
             as: "ai",
-            attributes: ["id", "model_name", "model_use_name", "model_type"],
+            attributes: ["id", "model_name", "model_use_name", "model_type", "message_type"],
           },
         ],
       },

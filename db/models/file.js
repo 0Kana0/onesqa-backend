@@ -15,6 +15,13 @@ module.exports = (sequelize, DataTypes) => {
         foreignKey: 'message_id', 
         as: 'message' 
       });
+
+      File.hasMany(models.Rag_chunk, {
+        foreignKey: 'file_id',
+        as: 'rag_chunk',
+        onDelete: 'CASCADE',
+        hooks: true, // ✅ จำเป็นถ้าใช้ paranoid
+      });
     }
   }
   File.init({

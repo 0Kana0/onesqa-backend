@@ -32,6 +32,12 @@ module.exports = (sequelize, DataTypes) => {
         onDelete: 'CASCADE',
         hooks: true, // ✅ จำเป็นถ้าใช้ paranoid
       });
+      Chat.hasMany(models.Rag_chunk, {
+        foreignKey: 'chat_id',
+        as: 'rag_chunk',
+        onDelete: 'CASCADE',
+        hooks: true, // ✅ จำเป็นถ้าใช้ paranoid
+      });
     }
   }
   Chat.init({

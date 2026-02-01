@@ -51,21 +51,24 @@ services:
 
     environment:
       TZ: "Asia/Bangkok"
+      NODE_OPTIONS: --max-old-space-size=2048
+
+    # ถ้า worker ต้องใช้ code จากเครื่องคุณเหมือน node (ตอน dev) ให้เปิด volume นี้
+    volumes:
+      - .:/usr/src/app
+      - /etc/localtime:/etc/localtime:ro
+      - /etc/timezone:/etc/timezone:ro
 
     command: node /usr/src/app/workers/email.worker.js
 
     depends_on:
-      - redis
+      redis:
+        condition: service_healthy
 
     networks:
       - node-backend
 
-    # ✅ กัน log บวม
-    logging:
-      driver: "json-file"
-      options:
-        max-size: "10m"
-        max-file: "5"
+    stop_grace_period: 30s
 
   # ✅ Postgres Database
   postgres:
@@ -85,6 +88,13 @@ services:
     networks:
       - node-backend
 
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d onesqa_v2_db"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+
   # ✅ Redis service
   redis:
     image: redis:7.4
@@ -97,6 +107,13 @@ services:
       - redis_data:/data
     networks:
       - node-backend
+
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 10
+      start_period: 5s
 
   # ✅ Prometheus (เก็บ Metrics)
   prometheus:

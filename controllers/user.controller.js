@@ -125,7 +125,7 @@ exports.listUsers = async ({ page, pageSize, where = {} }) => {
     as: "user_ai",
     required: false,
     include: [
-      { model: Ai, as: "ai", attributes: ["model_name", "model_use_name", "model_type"], required: false },
+      { model: Ai, as: "ai", attributes: ["model_name", "model_use_name", "model_type", "message_type"], required: false },
     ],
   };
 
@@ -177,7 +177,7 @@ exports.getByUserId = async (id) => {
           {
             model: Ai,
             as: "ai",
-            attributes: ["model_name", "model_use_name", "model_type"],
+            attributes: ["model_name", "model_use_name", "model_type", "message_type"],
             required: false,
           },
         ],
@@ -262,7 +262,7 @@ exports.updateUser = async (id, input, ctx) => {
             {
               model: Ai,
               as: "ai",
-              attributes: ["model_name", "model_use_name", "model_type"],
+              attributes: ["model_name", "model_use_name", "model_type", "message_type"],
               required: false,
             },
           ],
@@ -630,7 +630,7 @@ exports.updateUser = async (id, input, ctx) => {
             {
               model: Ai,
               as: "ai",
-              attributes: ["model_name", "model_use_name", "model_type"],
+              attributes: ["model_name", "model_use_name", "model_type", "message_type"],
             },
           ],
         },

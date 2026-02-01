@@ -1,6 +1,7 @@
 // openai-smart-rules-only.js
 const OpenAI = require("openai");
 const fs = require("fs");
+const path = require("path"); // ✅ เพิ่มบรรทัดนี้
 require("dotenv").config();
 
 const client = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
@@ -176,6 +177,23 @@ function decideEnableSearch(historyList) {
   return looksLikeFreshInfo(lastUser.content);
 }
 
+// ✅ ไฟล์ที่ “บล็อคการค้นเว็บ”
+const SEARCH_BLOCK_EXTS = new Set([
+  ".pdf",
+  ".doc", ".docx",
+  ".xls", ".xlsx",
+  ".ppt", ".pptx",
+  ".mp4",
+]);
+
+function hasSearchBlockingFiles(fileNames = []) {
+  const arr = Array.isArray(fileNames) ? fileNames : [fileNames];
+  return arr.some((name) => {
+    const ext = path.extname(String(name || "")).toLowerCase();
+    return SEARCH_BLOCK_EXTS.has(ext);
+  });
+}
+
 /* ----------------------------- ฟังก์ชันหลัก (กฎอย่างเดียว) ----------------------------- */
 /**
  * @param {Array<{role:"system"|"user"|"assistant", content:any}>} historyList
@@ -183,15 +201,23 @@ function decideEnableSearch(historyList) {
  * @param {{ forceSearch?: boolean, disableSearch?: boolean, maxOutputTokens?: number }} [options]
  */
 exports.openAiChat = async (historyList, model_name, options = {}) => {
-  const { forceSearch = false, disableSearch = false } = options;
+  const { forceSearch = false, disableSearch = false, fileNames = [] } = options;
+  // ✅ ถ้ามีไฟล์บล็อค => ปิด search ทันที
+  const blockByFiles = hasSearchBlockingFiles(fileNames);
 
-  // ตัดสินใจเปิด/ปิดจาก "กฎอย่างเดียว"
-  const ruleBased = forceSearch ? true : (disableSearch ? false : decideEnableSearch(historyList));
-  const enableSearch = ruleBased;
+  // ตัดสินใจเปิด/ปิดจากกฎ
+  // ลำดับความสำคัญ: forceSearch > (disableSearch หรือ blockByFiles) > กฎคีย์เวิร์ดเดิม
+  const enableSearch = forceSearch
+    ? true
+    : (disableSearch || blockByFiles)
+      ? false
+      : decideEnableSearch(historyList);
 
   const req = {
     model: model_name,
     input: historyList,
+    truncation: "auto", // ✅ ให้ตัดของเก่าทิ้งแทน 400
+    max_output_tokens: 50000
   };
 
   if (enableSearch) {
@@ -205,7 +231,8 @@ exports.openAiChat = async (historyList, model_name, options = {}) => {
   return {
     text,
     response: resp,
-    enableSearch,        // ให้รู้ว่ารอบนี้เปิดค้นเว็บไหม
-    usage: resp.usage    // เอาไปทำ dashboard วิเคราะห์โทเคนได้
+    enableSearch,
+    blockByFiles,       // ✅ optional debug
+    usage: resp.usage,
   };
 };

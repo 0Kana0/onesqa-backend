@@ -24,10 +24,10 @@ exports.uploadAndWait = async (localPath, mimeType, displayName) => {
   return ready; // มี ready.uri, ready.mimeType
 }
 
-exports.geminiChat = async (messageList, historyList, model_name) => {
+exports.geminiChat = async (messageList, historyList, model_name, { enableGoogleSearch = true } = {}) => {
   const model = genAI.getGenerativeModel({
     model: model_name,
-    tools: [{ googleSearch: {} }],   // ✅ ต้องอยู่ระดับนี้
+    ...(enableGoogleSearch ? { tools: [{ googleSearch: {} }] } : {}), // ✅ เปิด/ปิดตาม flag
   });
 
   // (ถ้าต้องการให้รู้วันที่/เวลาไทยเสมอ แทรก system-like preface ใน history เอง)
@@ -37,3 +37,4 @@ exports.geminiChat = async (messageList, historyList, model_name) => {
   const text = await result.response.text();
   return { text, response: result.response };
 };
+

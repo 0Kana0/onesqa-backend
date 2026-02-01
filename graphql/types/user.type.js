@@ -13,6 +13,12 @@ module.exports = `
     th
     en
   }
+  enum MessageType {
+    TEXT
+    IMAGE
+    VIDEO
+    DOC
+  }
 
   type RoleName {
     role_name_th: String!
@@ -32,6 +38,7 @@ module.exports = `
     model_name: String!
     model_use_name: String!
     model_type: String!
+    message_type: MessageType
   }
   type UserAi {
     id: ID!

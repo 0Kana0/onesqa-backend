@@ -57,7 +57,7 @@ exports.listChats = async (
       {
         model: Ai,
         as: "ai",
-        attributes: ["model_name", "model_use_name", "model_type"],
+        attributes: ["model_name", "model_use_name", "model_type", "message_type"],
         required: false,
       },
     ],
@@ -101,7 +101,7 @@ exports.getChatById = async (id, user_id) => {
       {
         model: Ai,
         as: "ai",
-        attributes: ["model_name", "model_use_name", "model_type"],
+        attributes: ["model_name", "model_use_name", "model_type", "message_type"],
         required: false,
       },
     ],

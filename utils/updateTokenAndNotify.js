@@ -18,6 +18,7 @@ function fmt(n, locale = "en-US") {
 async function updateTokenAndNotify({
   ctx,
   chatOne,
+  findRealModel,
   usedTokens,
   thresholdPercent = 15,
   thresholdTokenCount = 1_000_000, // ✅ เพิ่ม threshold แบบจำนวน token คงเหลือ
@@ -26,7 +27,7 @@ async function updateTokenAndNotify({
 
   const locale = await getLocale(ctx);
 
-  if (!chatOne?.ai?.id || !chatOne?.user_id) {
+  if (!findRealModel?.id || !chatOne?.user_id) {
     throw new Error(
       locale === "th"
         ? "chatOne ไม่ครบ ai.id หรือ user_id"
@@ -34,7 +35,7 @@ async function updateTokenAndNotify({
     );
   }
 
-  const aiId = chatOne.ai.id;
+  const aiId = findRealModel.id;
   const userId = chatOne.user_id;
   const used = Number(usedTokens) || 0;
 
@@ -138,7 +139,7 @@ async function updateTokenAndNotify({
         loginAt: admin.loginAt,
         userId: admin.id,
         title: "การใช้งาน Token ใกล้ถึงขีดจำกัดของระบบ",
-        message: `Token ของ Model ${chatOne?.ai?.model_use_name} ${reasonTH} กรุณาติดตามการใช้งานอย่างใกล้ชิด`,
+        message: `Token ของ Model ${findRealModel?.model_use_name} ${reasonTH} กรุณาติดตามการใช้งานอย่างใกล้ชิด`,
         type: "WARNING",
         to: admin.email,
         transaction,
@@ -151,7 +152,7 @@ async function updateTokenAndNotify({
         loginAt: admin.loginAt,
         userId: admin.id,
         title: "System Token Usage Warning",
-        message: `Model ${chatOne?.ai?.model_use_name}: ${reasonEN}. Please monitor usage closely.`,
+        message: `Model ${findRealModel?.model_use_name}: ${reasonEN}. Please monitor usage closely.`,
         type: "WARNING",
         to: admin.email,
         transaction,
@@ -183,7 +184,7 @@ async function updateTokenAndNotify({
       loginAt: chatOne?.user?.loginAt,
       userId,
       title: "การใช้งาน Token เกินกำหนด",
-      message: `การใช้งาน Token ของ Model ${chatOne?.ai?.model_use_name} อยู่ที่ 85% กรุณาติดต่อผู้ดูแลระบบ`,
+      message: `การใช้งาน Token ของ Model ${findRealModel?.model_use_name} อยู่ที่ 85% กรุณาติดต่อผู้ดูแลระบบ`,
       type: "WARNING",
       to: chatOne?.user?.email,
       transaction,
@@ -196,7 +197,7 @@ async function updateTokenAndNotify({
       loginAt: chatOne?.user?.loginAt,
       userId,
       title: "Token Usage Limit Warning",
-      message: `Token usage for model ${chatOne?.ai?.model_use_name} has reached 85%. Please contact the system administrator.`,
+      message: `Token usage for model ${findRealModel?.model_use_name} has reached 85%. Please contact the system administrator.`,
       type: "WARNING",
       to: chatOne?.user?.email,
       transaction,

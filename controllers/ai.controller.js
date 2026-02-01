@@ -14,7 +14,7 @@ const moment = require('moment-timezone');
  */
 const TZ = 'Asia/Bangkok';
 
-exports.listAis = async () => {
+exports.listAis = async (message_type) => {
   // ขอบเขตเวลาโซนไทย
   const nowTH = moment.tz(TZ);
   const startMonthTH = nowTH.clone().startOf("month");
@@ -25,11 +25,57 @@ exports.listAis = async () => {
 
   const daysElapsed = nowTH.diff(startMonthTH, "days") + 1;
 
-  // 1) รายการ Ai ตามเดิม
+  // ---- message_type filter (optional) ----
+  const ALLOWED = new Set(["TEXT", "IMAGE", "VIDEO", "DOC"]);
+
+  const normalizeMessageType = (v) => {
+    if (!v) return null;
+
+    // array: ["TEXT","IMAGE"]
+    if (Array.isArray(v)) {
+      const arr = v
+        .map((x) => String(x || "").trim().toUpperCase())
+        .filter(Boolean)
+        .filter((x) => ALLOWED.has(x));
+      return arr.length ? arr : null;
+    }
+
+    // string: "TEXT" or "TEXT,IMAGE"
+    const s = String(v).trim();
+    if (!s) return null;
+
+    const arr = s
+      .split(",")
+      .map((x) => x.trim().toUpperCase())
+      .filter(Boolean)
+      .filter((x) => ALLOWED.has(x));
+
+    return arr.length ? arr : null;
+  };
+
+  const mt = normalizeMessageType(message_type);
+
+  const aiWhere = {};
+  if (mt) {
+    aiWhere.message_type = mt.length === 1 ? mt[0] : { [Op.in]: mt };
+  }
+
+  // 1) รายการ Ai (+ filter ตาม message_type ถ้ามี)
   const ais = await Ai.findAll({
+    where: aiWhere,
     order: [["id", "ASC"]],
     raw: true,
   });
+
+  // ถ้าไม่มี ai ที่ match ก็จบเลย (กัน query user_token เปลือง)
+  if (!ais.length) return [];
+
+  const aiIds = ais.map((a) => a.id);
+
+  // base where สำหรับ token: จำกัดเฉพาะ ai ที่ได้มาแล้ว
+  const tokenBaseWhere = {
+    ai_id: { [Op.in]: aiIds },
+  };
 
   // 2) รวม token "วันนี้" ต่อ Ai จาก user_token
   const todayAgg = await User_token.findAll({
@@ -38,7 +84,7 @@ exports.listAis = async () => {
       [fn("COALESCE", fn("SUM", col("total_token")), 0), "tokens_today"],
     ],
     where: {
-      ai_id: { [Op.ne]: null },
+      ...tokenBaseWhere,
       used_date: usedDateToday,
     },
     group: ["ai_id"],
@@ -52,7 +98,7 @@ exports.listAis = async () => {
       [fn("COALESCE", fn("SUM", col("total_token")), 0), "tokens_month"],
     ],
     where: {
-      ai_id: { [Op.ne]: null },
+      ...tokenBaseWhere,
       used_date: { [Op.gte]: startOfMonthStr, [Op.lt]: startOfNextMonthStr },
     },
     group: ["ai_id"],

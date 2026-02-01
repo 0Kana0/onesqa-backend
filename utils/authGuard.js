@@ -2,7 +2,7 @@ const db = require("../db/models"); // หรือ '../../db/models' ถ้า�
 const { User } = db;
 
 exports.requireAuth = (ctx) => {
-  console.log("ctx", ctx?.req?.user);
+  //console.log("ctx", ctx?.req?.user);
   
   if (ctx?.req?.user === null || ctx?.req?.user == undefined) {
     console.log("Unauthorized");
@@ -13,13 +13,13 @@ exports.requireAuth = (ctx) => {
 }
 
 exports.checkUserInDB = async (ctx) => {
-  console.log("ctx checkUserInDB", ctx?.req?.user);
+  //console.log("ctx checkUserInDB", ctx?.req?.user);
 
   const user = await User.findByPk(ctx?.req?.user?.id, {
     attributes: ["id"],
   });
 
-  console.log("findUser", user);
+  //console.log("findUser", user);
 
   if (user === null || user == undefined) {
     console.log("No User Found");

@@ -19,10 +19,10 @@ module.exports = function verifyToken(req, res, next) {
     }
 
     const decoded = verifyAccessToken(useToken); // ถ้าไม่ผ่านจะ throw
-    console.log("decoded", decoded);
+    //console.log("decoded", decoded);
     
     req.user = decoded; // { id, username, ... }
-    console.log("req.user", req.user);
+    //console.log("req.user", req.user);
     
     return next();
   } catch (err) {
