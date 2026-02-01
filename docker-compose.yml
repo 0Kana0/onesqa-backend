@@ -16,6 +16,8 @@ services:
     environment:
       NODE_OPTIONS: --max-old-space-size=4096
       TZ: 'Asia/Bangkok'
+      RUN_DB_SETUP: "true"
+      RUN_SEED: "true"
 
     # ✅ ให้แน่ใจว่า mount โฟลเดอร์โปรเจ็กต์ปัจจุบันเข้ามาใน container
     volumes:
@@ -24,7 +26,7 @@ services:
       - /etc/timezone:/etc/timezone:ro
 
     # ✅ ใช้ path เต็มเพื่อเรียก script
-    command: sh /usr/src/app/entrypoint.sh
+    command: sh /usr/src/app/entrypoint.sh node server.js
 
     depends_on:
       - postgres
@@ -47,19 +49,20 @@ services:
     restart: unless-stopped
 
     env_file:
-      - ../env
+      - .env
 
     environment:
       TZ: "Asia/Bangkok"
       NODE_OPTIONS: --max-old-space-size=2048
+      RUN_DB_SETUP: "false"   # ✅ สำคัญ: กัน worker ทำ migrate/seed
 
     # ถ้า worker ต้องใช้ code จากเครื่องคุณเหมือน node (ตอน dev) ให้เปิด volume นี้
     volumes:
       - .:/usr/src/app
       - /etc/localtime:/etc/localtime:ro
       - /etc/timezone:/etc/timezone:ro
-
-    command: node /usr/src/app/workers/email.worker.js
+      
+    command: sh /usr/src/app/entrypoint.sh node /usr/src/app/workers/email.worker.js
 
     depends_on:
       redis:
