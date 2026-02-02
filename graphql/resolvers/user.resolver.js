@@ -33,7 +33,7 @@ module.exports = {
     syncUsersFromApi: async (_parent, {  }, ctx) => {
       requireAuth(ctx); // ต้องล็อกอินก่อน
       await checkUserInDB(ctx);
-			return await UserController.syncUsersFromApi()
+			return await UserController.syncUsersFromApi(ctx)
     },
 	}
 };

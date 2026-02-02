@@ -644,7 +644,7 @@ exports.createMessage = async (input, ctx) => {
       chatId: chat_id,
       fileIds: fileIdsInChat,
       query: message,
-      topK: 20,
+      topK: 60,
     });
 
     // 5) สร้าง context part (ถ้าเจอ)
@@ -664,7 +664,13 @@ exports.createMessage = async (input, ctx) => {
     };
 
     historyList.push(messagePrompt);
-    console.log(messagePrompt);
+    const out =
+      typeof messagePrompt === "string"
+        ? messagePrompt
+        : JSON.stringify(messagePrompt, null, 2);
+
+    //fs.writeFileSync("messagePrompt.log", out, "utf8");
+    //console.log("✅ wrote messagePrompt.log");
 
     // ส่งประวัติ prompt และคำถามล่าสุดไปในคำนวนและ return คำตอบออกมา
     const { text, response, enableSearch } = await openAiChat(

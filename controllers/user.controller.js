@@ -668,7 +668,7 @@ const isOnesqaDownError = (err) => {
   return false;
 };
 
-async function onesqaPost(endpoint, data, headers) {
+async function onesqaPost(endpoint, data, headers, locale) {
   try {
     return await axios.post(`${process.env.ONESQA_URL}${endpoint}`, data, {
       httpsAgent,
@@ -746,7 +746,9 @@ async function upsertUserCountDaily(totalUser) {
 
   return { count_date: todayStr, total_user: totalUser };
 }
-exports.syncUsersFromApi = async () => {
+exports.syncUsersFromApi = async (ctx) => {
+  const locale = await getLocale(ctx);
+
   let staffApiCount = 0;
   let assessorApiCount = 0;
 
@@ -790,7 +792,8 @@ exports.syncUsersFromApi = async () => {
   const first = await onesqaPost(
     "/assessments/get_assessor",
     { start: "0", length: String(length) },
-    headers
+    headers,
+    locale
   );
 
   const total = Number(first.data?.total ?? 0);
@@ -806,7 +809,8 @@ exports.syncUsersFromApi = async () => {
     const res = await onesqaPost(
       "/assessments/get_assessor",
       { start: String(start), length: String(length) },
-      headers
+      headers,
+      locale
     );
     const items = Array.isArray(res.data?.data) ? res.data.data : [];
     assessors.push(...items);
@@ -901,7 +905,8 @@ exports.syncUsersFromApi = async () => {
     const response = await onesqaPost(
       "/basics/get_user",
       { group_id: String(g.group_api_id) },
-      headers
+      headers,
+      locale
     );
 
     const users = Array.isArray(response.data?.data) ? response.data.data : [];
@@ -1032,7 +1037,8 @@ exports.syncUsersFromApi = async () => {
         const response = await onesqaPost(
           "/basics/get_user",
           { group_id: String(g.group_api_id) },
-          headers
+          headers,
+          locale
         );
 
         const users = Array.isArray(response.data?.data) ? response.data.data : [];

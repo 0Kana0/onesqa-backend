@@ -47,7 +47,7 @@ function splitLongLine(line, maxChars) {
   return out;
 }
 
-function chunkText(text, { maxChars = 1800, overlapLines = 6 } = {}) {
+function chunkText(text, { maxChars = 1800, overlapLines = 0 } = {}) {
   const t = normalizeForEmbed(text);
   if (!t) return [];
 
@@ -156,7 +156,7 @@ async function ensureIndexedFile({ db, chatId, file, extractors, transcribeAudio
 
   // chunk + embed
   text = normalizeForEmbed(text);
-  const chunks = chunkText(text, { maxChars: 1800, overlapLines: 6 });
+  const chunks = chunkText(text, { maxChars: 1800, overlapLines: 0 });
   if (!chunks.length) return { indexed: true, count: 0 };
 
   const vectors = await embedTexts(chunks);
@@ -197,7 +197,7 @@ async function ensureIndexedFilesForChat({ db, chatId, files, extractors, transc
 /**
  * Retrieve topK chunks สำหรับ query จากไฟล์ที่กำหนด
  */
-async function retrieveContext({ db, chatId, fileIds, query, topK = 20, candidateLimit = 20000 }) {
+async function retrieveContext({ db, chatId, fileIds, query, topK = 20, candidateLimit = 999999999999999 }) {
   const { Rag_chunk } = db;
   const q = String(query || "").trim();
   if (!q) return { contextText: "", hits: [] };
@@ -209,8 +209,11 @@ async function retrieveContext({ db, chatId, fileIds, query, topK = 20, candidat
     q.replace(/[ \t]+/g, " ").trim(),    // normalize spacing
   ])];
 
+  console.log("variants", variants);
+  
   const qVecs = await embedTexts(variants);
   if (!qVecs?.length) return { contextText: "", hits: [] };
+  console.log("qVecs", qVecs);
 
   const rows = await Rag_chunk.findAll({
     where: { chat_id: chatId, ...(fileIds?.length ? { file_id: fileIds } : {}) },
@@ -234,6 +237,7 @@ async function retrieveContext({ db, chatId, fileIds, query, topK = 20, candidat
       });
   }
   scored.sort((a, b) => b.score - a.score);
+  //console.log(scored);
   const hits = scored.slice(0, topK);
 
   const contextText = hits.map((h, i) =>

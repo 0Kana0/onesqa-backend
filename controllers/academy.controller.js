@@ -4,6 +4,7 @@ require("dotenv").config();
 const { Op, fn, col, literal, QueryTypes } = require("sequelize");
 const db = require("../db/models"); // หรือ '../../db/models' ถ้าโปรเจกต์คุณใช้ path นั้น
 const { Academy, SarHistory, User, sequelize } = db;
+const { getLocale, getCurrentUser } = require("../utils/currentUser");
 const moment = require("moment-timezone");
 const https = require("https");
 
@@ -165,7 +166,7 @@ const isOnesqaDownError = (err) => {
   return false;
 };
 
-async function onesqaPost(endpoint, data, headers) {
+async function onesqaPost(endpoint, data, headers, locale) {
   try {
     return await axios.post(`${process.env.ONESQA_URL}${endpoint}`, data, {
       httpsAgent,
@@ -189,7 +190,9 @@ async function onesqaPost(endpoint, data, headers) {
 const ACADEMY_PAGE_CONCURRENCY = 3;
 const SAR_CONCURRENCY = 5;
 
-exports.syncAcademyFromApi = async () => {
+exports.syncAcademyFromApi = async (ctx) => {
+  const locale = await getLocale(ctx);
+
   const headers = {
     Accept: "application/json",
     "X-Auth-ID": process.env.X_AUTH_ID,
@@ -209,7 +212,8 @@ exports.syncAcademyFromApi = async () => {
     const first = await onesqaPost(
       "/basics/get_academy",
       { start: "0", length: String(length), academy_level_id: String(level) },
-      headers
+      headers,
+      locale
     );
 
     const total = Number(first.data?.total ?? 0);
@@ -223,7 +227,8 @@ exports.syncAcademyFromApi = async () => {
       const res = await onesqaPost(
         "/basics/get_academy",
         { start: String(start), length: String(length), academy_level_id: String(level) },
-        headers
+        headers,
+        locale
       );
       return Array.isArray(res.data?.data) ? res.data.data : [];
     });
@@ -278,7 +283,7 @@ exports.syncAcademyFromApi = async () => {
     // ✅ ดึง sar จาก API
     const sarResults = await mapPool(academyArray, SAR_CONCURRENCY, async (a) => {
       try {
-        const sarRes = await onesqaPost("/basics/get_sar", { academy_code: a.code }, headers);
+        const sarRes = await onesqaPost("/basics/get_sar", { academy_code: a.code }, headers, locale);
         const raw = Array.isArray(sarRes.data?.data) ? sarRes.data.data : [];
 
         const sar_file = raw
