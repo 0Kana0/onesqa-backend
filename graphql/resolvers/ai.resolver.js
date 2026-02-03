@@ -14,6 +14,11 @@ module.exports = {
       await checkUserInDB(ctx);
       return await AiController.getAiById(id);
     },
+    sumTokenCountByModel: async (_parent, {  }, ctx) => {
+      requireAuth(ctx); // ต้องล็อกอินก่อน
+      await checkUserInDB(ctx);
+      return await AiController.sumTokenCountByModel();
+    },
   },
   Mutation: {
     createAi: async (_parent, { input }, ctx) => {

@@ -93,7 +93,7 @@ async function onesqaPostSar(endpoint, data, headers) {
 const ACADEMY_PAGE_CONCURRENCY = 3;
 const SAR_CONCURRENCY = 5;
 
-/***************** ดึงข้อมูล Group ทุก 00:00  *****************/
+/***************** ดึงข้อมูล Group ทุก 00:01  *****************/
 /**
  * ดึง group จาก ONESQA API แล้ว sync กับ table group
  */
@@ -207,7 +207,7 @@ async function syncGroupAiFromAiTable() {
   console.log("✅ syncGroupAiFromAiTable เสร็จแล้ว");
 }
 
-/***************** ดึงข้อมูล User ทุก 00:30  *****************/
+/***************** ดึงข้อมูล User ทุก 00:11  *****************/
 async function upsertUserCountDaily(totalUser) {
   const today = moment.tz(TZ).startOf("day");
   const todayStr = today.format("YYYY-MM-DD");
@@ -936,8 +936,8 @@ async function syncUsersFromApi() {
   };
 }
 
-/***************** ดึงข้อมูล SAR File ทุก 01:00  *****************/
-async function syncAcademyFromApi() {
+/***************** ดึงข้อมูล SAR File ของระดับที่ 1 ทุก 01:01  *****************/
+async function syncAcademyFromApiOne() {
   const headers = {
     Accept: "application/json",
     "X-Auth-ID": process.env.X_AUTH_ID,
@@ -949,7 +949,208 @@ async function syncAcademyFromApi() {
   const qg = qi.queryGenerator;
   const table = qg.quoteTable(Academy.getTableName());
 
-  for (let level = 1; level < 7; level++) {
+  for (let level = 1; level < 2; level++) {
+    console.log("academy_level_id =", level);
+
+    const length = 1000;
+
+    const first = await onesqaPostSar(
+      "/basics/get_academy",
+      { start: "0", length: String(length), academy_level_id: String(level) },
+      headers
+    );
+
+    const total = Number(first.data?.total ?? 0);
+    const firstItems = Array.isArray(first.data?.data) ? first.data.data : [];
+    const pages = Math.ceil(total / length);
+
+    const starts = [];
+    for (let page = 1; page < pages; page++) starts.push(page * length);
+
+    const restPages = await mapPool(starts, ACADEMY_PAGE_CONCURRENCY, async (start) => {
+      const res = await onesqaPostSar(
+        "/basics/get_academy",
+        { start: String(start), length: String(length), academy_level_id: String(level) },
+        headers
+      );
+      return Array.isArray(res.data?.data) ? res.data.data : [];
+    });
+
+    const academyArray = [...firstItems, ...restPages.flat()];
+    console.log("✅ academy fetched:", academyArray.length);
+
+    // ✅ apiIds ของชุดนี้ (ใช้ทั้งตัดไฟล์ + DELETE NOT IN)
+    const apiIds = academyArray
+      .map((a) => Number(a.id))
+      .filter((n) => Number.isInteger(n));
+
+    // ✅ map ไฟล์ที่เคยถูกลบ: apiId -> Set(files)
+    const deletedMap = new Map(); // Map<number, Set<string>>
+
+    if (apiIds.length > 0) {
+      const deletedRows = await SarHistory.findAll({
+        attributes: ["sar_file"],
+        include: [
+          {
+            model: Academy,
+            as: "academy",
+            required: true,
+            attributes: ["academy_api_id"],
+            where: {
+              academy_level_id: String(level),
+              academy_api_id: { [Op.in]: apiIds },
+            },
+          },
+        ],
+        raw: true,
+      });
+
+      for (const r of deletedRows) {
+        const apiId = Number(r["academy.academy_api_id"]);
+        const f = String(r.sar_file ?? "").trim();
+        if (!Number.isInteger(apiId) || !f) continue;
+
+        if (!deletedMap.has(apiId)) deletedMap.set(apiId, new Set());
+        deletedMap.get(apiId).add(f);
+      }
+    }
+
+    // ✅ ของเดิมใน DB (ไว้ fallback)
+    const existingAcademies = await Academy.findAll({
+      where: { academy_level_id: String(level) },
+      attributes: ["academy_api_id", "sar_file"],
+      raw: true,
+    });
+    const existingMap = new Map(existingAcademies.map((r) => [r.academy_api_id, r]));
+
+    // ✅ ดึง sar จาก API
+    const sarResults = await mapPool(academyArray, SAR_CONCURRENCY, async (a) => {
+      try {
+        const sarRes = await onesqaPostSar("/basics/get_sar", { academy_code: a.code }, headers);
+        const raw = Array.isArray(sarRes.data?.data) ? sarRes.data.data : [];
+
+        const sar_file = raw
+          .filter((x) => x && x.year != null && x.file)
+          .map((x) => ({ year: String(x.year), file: x.file }))
+          .filter((v, i, arr) => i === arr.findIndex((t) => t.year === v.year && t.file === v.file))
+          .sort((a, b) => Number(b.year) - Number(a.year));
+
+        return { apiId: a.id, sar_file };
+      } catch {
+        return { apiId: a.id, sar_file: null }; // null = ใช้ของเดิม
+      }
+    });
+
+    const sarMap = new Map(sarResults.map((x) => [x.apiId, x.sar_file]));
+
+    // ✅ สร้าง payload และ "ตัดไฟล์ที่เคยลบ (SarHistory) ออก"
+    const payloads = academyArray.map((a) => {
+      const prev = existingMap.get(a.id);
+      const sar_file = sarMap.get(a.id);
+
+      const baseSar =
+        sar_file === null ? (prev?.sar_file ?? []) : (sar_file ?? []);
+
+      const delSet = deletedMap.get(Number(a.id));
+
+      const filteredSar =
+        Array.isArray(baseSar) && delSet
+          ? baseSar.filter((it) => {
+              const f = String(it?.file ?? "").trim();
+              return f && !delSet.has(f);
+            })
+          : baseSar;
+
+      return {
+        academy_level_id: String(level),
+        academy_api_id: a.id,
+        name: a.name,
+        code: a.code,
+        sar_file: filteredSar,
+      };
+    });
+
+    await sequelize.transaction(async (t) => {
+      // ✅ UPSERT
+      await sequelize.query(
+        `
+        INSERT INTO ${table}
+          (academy_level_id, academy_api_id, name, code, sar_file, "createdAt", "updatedAt")
+        SELECT
+          x.academy_level_id,
+          x.academy_api_id,
+          x.name,
+          x.code,
+          x.sar_file,
+          NOW(),
+          NOW()
+        FROM jsonb_to_recordset(:rows::jsonb) AS x(
+          academy_level_id text,
+          academy_api_id int,
+          name text,
+          code text,
+          sar_file jsonb
+        )
+        ON CONFLICT (academy_level_id, academy_api_id)
+        DO UPDATE SET
+          name = EXCLUDED.name,
+          code = EXCLUDED.code,
+          sar_file = EXCLUDED.sar_file,
+          "updatedAt" = NOW();
+        `,
+        {
+          transaction: t,
+          replacements: { rows: JSON.stringify(payloads) },
+        }
+      );
+
+      // ✅ DELETE รายการที่ไม่มีใน API แล้ว
+      if (apiIds.length > 0) {
+        await sequelize.query(
+          `
+          DELETE FROM ${table}
+          WHERE academy_level_id = $level
+            AND NOT (academy_api_id = ANY($apiIds::int[]));
+          `,
+          {
+            transaction: t,
+            bind: { level: String(level), apiIds },
+          }
+        );
+      } else {
+        await sequelize.query(
+          `
+          DELETE FROM ${table}
+          WHERE academy_level_id = $level;
+          `,
+          {
+            transaction: t,
+            bind: { level: String(level) },
+          }
+        );
+      }
+    });
+
+    console.log(`✅ sync สำเร็จ (level=${level}, total=${academyArray.length})`);
+  }
+
+  return { message: "sync ข้อมูลสถานศึกษาสำเร็จ", status: "success" };
+};
+
+/***************** ดึงข้อมูล SAR File ของระดับที่ 2-6 ทุก 02:01 *****************/
+async function syncAcademyFromApiTwoSix() {
+  const headers = {
+    Accept: "application/json",
+    "X-Auth-ID": process.env.X_AUTH_ID,
+    "X-Auth-Token": process.env.X_AUTH_TOKEN,
+  };
+
+  const sequelize = db.sequelize;
+  const qi = sequelize.getQueryInterface();
+  const qg = qi.queryGenerator;
+  const table = qg.quoteTable(Academy.getTableName());
+
+  for (let level = 2; level < 7; level++) {
     console.log("academy_level_id =", level);
 
     const length = 1000;
@@ -1353,7 +1554,8 @@ function startDailyJobs() {
 
   // ⚠️ ปกติไม่ต้องรันทันที (กันพลาด)
   //syncUsersFromApi();
-  //syncAcademyFromApi();
+  //syncAcademyFromApiOne();
+  //syncAcademyFromApiTwoSix();
   //cleanupOldNotifications();
   //cleanupOldUserDailyActives();
   //cleanupExpiredRefreshTokens();
@@ -1378,21 +1580,31 @@ function startDailyJobs() {
     { timezone: TZ }
   );
 
-  // ✅ ดึง SAR File ทุกวัน 00:31
+  // ✅ ดึง SAR File ทุกวัน 01:01
   cron.schedule(
-    "31 0 * * *",
+    "1 1 * * *",
     () => {
-      console.log("⏰ Running daily job (01:01): syncAcademyFromApi()");
-      syncAcademyFromApi();
+      console.log("⏰ Running daily job (01:01): syncAcademyFromApiOne()");
+      syncAcademyFromApiOne();
     },
     { timezone: TZ }
   );
 
-  // 📅 รันทุกเดือน 00:01
+  // ✅ ดึง SAR File ทุกวัน 02:01
+  cron.schedule(
+    "1 2 * * *",
+    () => {
+      console.log("⏰ Running daily job (02:01): syncAcademyFromApiTwoSix()");
+      syncAcademyFromApiTwoSix();
+    },
+    { timezone: TZ }
+  );
+
+  // 📅 รันทุกวัน 00:01
   cron.schedule(
     "1 0 * * *",
     () => {
-      console.log("⏰ Running monthly job: dailyUserCount()");
+      console.log("⏰ Running daily job: dailyUserCount()");
       dailyUserCount();
     },
     { timezone: TZ }
@@ -1434,7 +1646,8 @@ module.exports = {
   syncGroupsFromApi,
   syncGroupAiFromAiTable,
   syncUsersFromApi,
-  syncAcademyFromApi,
+  syncAcademyFromApiOne,
+  syncAcademyFromApiTwoSix,
   dailyUserCount,
   cleanupOldNotifications,
   cleanupOldUserDailyActives,

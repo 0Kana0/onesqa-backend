@@ -1,7 +1,7 @@
 // controllers/ai.controller.js
 const { Op, fn, col } = require('sequelize');
 const db = require('../db/models'); // หรือ '../../db/models' ถ้าโปรเจกต์คุณใช้ path นั้น
-const { Ai, Chat, Message, User, User_role, User_ai, Group, Group_ai, User_token } = db;
+const { Ai, Chat, Message, User, User_role, User_ai, Group, Group_ai, User_token, sequelize } = db;
 const { auditLog } = require('../utils/auditLog'); // ปรับ path ให้ตรง
 const { notifyUser } = require("../utils/notifier"); // ที่ไฟล์ service/controller ของคุณ
 const { getLocale, getCurrentUser } = require("../utils/currentUser");
@@ -131,6 +131,41 @@ exports.getAiById = async (id) => {
   return await Ai.findByPk(id);
 }
 
+exports.sumTokenCountByModel = async () => {
+  const sql = `
+    SELECT
+      ua.ai_id,
+      a.model_name,
+      a.model_use_name,
+      a.model_type,
+      a.message_type,
+
+      COALESCE(a.token_count, 0) AS ai_token_count,
+
+      SUM(COALESCE(ua.token_count, 0)) AS total_token_count,
+      SUM(COALESCE(ua.token_all, 0))   AS total_token_all,
+      COUNT(DISTINCT ua.user_id)       AS user_count,
+
+      -- ✅ ผลต่าง (ai.token_count - ผลรวม user_ai.token_count)
+      (COALESCE(a.token_count, 0) - SUM(COALESCE(ua.token_count, 0))) AS diff_token_count
+
+    FROM user_ai ua
+    INNER JOIN ai a ON a.id = ua.ai_id
+    GROUP BY
+      ua.ai_id,
+      a.model_name,
+      a.model_use_name,
+      a.model_type,
+      a.message_type,
+      a.token_count
+    ORDER BY total_token_count DESC
+  `;
+
+  const [rows] = await sequelize.query(sql);
+  console.log(rows);
+  return rows;
+};
+
 /**
  * สร้าง Ai ใหม่ + map ไปยัง User_ai และ Group_ai ให้ทุก user / group
  */
@@ -218,14 +253,14 @@ exports.updateAi = async (id, input, ctx) => {
     throw new Error(locale === "th" ? "token_all ต้องมากกว่า 0" : "token_all must be greater than 0");
   }
 
-  // ✅ ไม่ให้ลด token ลง
-  // if (input?.token_count != null && input.token_count < row.token_count) {
-  //   throw new Error(
-  //     locale === "th"
-  //       ? "จำนวน token ไม่สามารถแก้ไขให้ลดลงได้"
-  //       : "Token amount cannot be reduced"
-  //   );
-  // }
+  //✅ ไม่ให้ลด token ลง
+  if (input?.token_count != null && input.token_count < row.token_count) {
+    throw new Error(
+      locale === "th"
+        ? "จำนวน token ไม่สามารถแก้ไขให้ลดลงได้ เนื่องจากต้องไปปรับจำนวนเงินในบัญชี"
+        : "Token amounts cannot be reduced, as this would require adjusting the account balance"
+    );
+  }
 
   console.log("row", row);
   console.log("input", input);
