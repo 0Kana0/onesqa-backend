@@ -3037,92 +3037,37 @@ exports.createMessageVideo = async (input, ctx) => {
     console.log("historyList", historyList);
 
     // ส่งประวัติ prompt และคำถามล่าสุดไปในคำนวนและ return คำตอบออกมา
-    // 1) เรียก generate video (OpenAI)
-    const {
-      files,
-      response: videoOperation, // operation/status ของงานวิดีโอ
-      usage,                    // ถ้ามี: {input_tokens, output_tokens, total_tokens}
-      cost_usd,
-      token_equivalent,         // token เทียบเท่า (ตาม tokenMode ที่คุณเลือก)
-    } = await openaiGenerateVideo(historyList, {
+    const { files, response, usage, cost_usd, token_equivalent } = await openaiGenerateVideo(historyList, {
       model: findRealModel?.model_name,
       seconds: 8,
       aspectRatio: "16:9",
-      quality: "high",
-      tokenMode: "input", // ✅ คุณใช้ input-equivalent อยู่แล้ว
+      quality: "high",               // จะเลือก size ใหญ่ขึ้นอัตโนมัติ
       outDir: "./uploads",
       fileBase: `${Date.now()}-gen-video`,
+      // inputReferencePath: "./uploads/start.png", // ถ้าต้องการบังคับภาพเริ่มต้นเอง
     });
 
-    console.log(videoOperation?.status);
+    console.log(response.status); // completed
     console.log("saved:", files);
-    console.log("usage:", usage);
-    console.log("cost_usd:", cost_usd);
-    console.log("token_equivalent:", token_equivalent);
 
-    // --------------------------------------
-    // 2) ✅ ทำ responseVideo ให้เหมือน flow gemini
-    // --------------------------------------
-    // ถ้า usage มีจริง ให้ใช้ usage ก่อน
-    // ถ้าไม่มี usage (บาง provider วิดีโอไม่ส่ง usage) ให้ fallback เป็น token_equivalent
-    const videoUsageMeta =
-      usage && (usage.input_tokens || usage.output_tokens || usage.total_tokens)
-        ? toUsageMetadataFromOpenAIUsage(usage)
-        : {
-            promptTokenCount: Number(token_equivalent || 0),   // tokenMode="input" => นับเป็น prompt ฝั่งเดียว
-            candidatesTokenCount: 0,
-            totalTokenCount: Number(token_equivalent || 0),
-          };
-
-    const responseVideo = {
-      operation: videoOperation,
-      usageMetadata: videoUsageMeta,
-      cost_usd,
-      token_equivalent,
-    };
-
-    // --------------------------------------
-    // 3) ✅ ทำ responseTranscribe (webm อย่างเดียว) ให้เป็น usageMetadata แบบเดิม
-    //    หมายเหตุ: webmUsageTotal ของคุณเป็นแบบ OpenAI {input_tokens, output_tokens, total_tokens}
-    // --------------------------------------
-    const responseTranscribe = {
-      usageMetadata: toUsageMetadataFromOpenAIUsage(webmUsageTotal),
-    };
-
-    // --------------------------------------
-    // 4) ✅ รวมกอง token แบบ “เดิม”
-    //    - กอง B (main): video + mp3/mp4 (mediaUsageTotal)
-    //    - กอง A (transcribe): webm อย่างเดียว
-    //    - responseMerged: main + webm (ไว้เก็บลง Message ของ assistant)
-    // --------------------------------------
-    const mediaUsageMeta = toUsageMetadataFromOpenAIUsage(mediaUsageTotal);
-
-    const mainUsageMeta = addUsageMetadata(
-      responseVideo?.usageMetadata || {},
-      mediaUsageMeta || {}
-    );
-
-    const mergedUsageMeta = addUsageMetadata(
-      mainUsageMeta || {},
-      responseTranscribe?.usageMetadata || {}
-    );
-
-    // ✅ กอง B: video + mp3/mp4
-    const responseMain = {
-      ...responseVideo,
-      usageMetadata: mainUsageMeta,
-    };
-
-    // ✅ responseMerged: ทั้งหมด (main + webm)
+    // ✅ รวม token: (webm ที่ถอดนอก processFiles) + (mp3/mp4 ที่ถอดใน processFiles)
+    const extraUsageTotal = addUsageOpenAI(webmUsageTotal, mediaUsageTotal);
     const responseMerged = {
-      ...responseVideo,
-      usageMetadata: mergedUsageMeta,
+      ...response,
+      usage: addUsageOpenAI(response?.usage || {}, extraUsageTotal),
+    };
+    // ✅ กอง B: ถามปกติ + mp3/mp4
+    const responseMain = {
+      usage: addUsageOpenAI(response?.usage, mediaUsageTotal)
+    }
+    // ✅ กอง A: webm อย่างเดียว
+    const responseWebm = {
+      usage: webmUsageTotal
     };
 
-    console.log("responseVideo", responseVideo);
-    console.log("responseTranscribe", responseTranscribe);
-    console.log("responseMain", responseMain);
     console.log("responseMerged", responseMerged);
+    console.log("responseMain", responseMain);
+    console.log("responseWebm", responseWebm);
 
     // อัพเดทเฉพาะ updatedAt ของ chat
     // touch updatedAt อย่างเดียว
@@ -3174,10 +3119,6 @@ exports.createMessageVideo = async (input, ctx) => {
       console.log(error);
     }
 
-    const inTok  = responseMerged?.usageMetadata?.promptTokenCount ?? 0;
-    const outTok = responseMerged?.usageMetadata?.candidatesTokenCount ?? 0;
-    const totTok = responseMerged?.usageMetadata?.totalTokenCount ?? 0;
-
     // เก็บคำตอบจาก model ลงใน db
     try {
       const answerData = await Message.create({
@@ -3185,9 +3126,9 @@ exports.createMessageVideo = async (input, ctx) => {
         message_type: message_type,
         text: "",
         file: fileIdsStr,
-        input_token: inTok,
-        output_token: outTok,
-        total_token: totTok,
+        input_token: 0,
+        output_token: 0,
+        total_token: 0,
         chat_id: chat_id,
       });
 
@@ -3200,18 +3141,18 @@ exports.createMessageVideo = async (input, ctx) => {
       console.log(error);
     }
 
-    // บันทึกของ responseTranscribe เปลี่ยนด้วยเสียง
-    if (responseTranscribe?.usage.total_tokens !== 0) {
+    // บันทึกของ responseWebm เปลี่ยนด้วยเสียง
+    if (responseWebm?.usage.total_tokens !== 0) {
       try {
         await upsertDailyUserToken({
           aiId: chatOne?.ai?.id,
           userId: chatOne?.user_id,
-          response: responseTranscribe,
+          response: responseWebm,
         });
       } catch (error) {
         console.log(error);
       }
-      const usedTranTokens = responseTranscribe?.usage.total_tokens ?? 0;
+      const usedTranTokens = responseWebm?.usage.total_tokens ?? 0;
       // ลบจำนวน token ที่ใช้จาก token ทั้งหมดของ model ของ user
       try {
         // อัปเดต token + เช็ค % แล้วส่งแจ้งเตือน
