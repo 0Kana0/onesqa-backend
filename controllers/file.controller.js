@@ -22,7 +22,7 @@ exports.saveUpload = async (upload, ai_id, user_id, ctx) => {
     ctx
   });
 
-  console.log("filename", filename);
+  // console.log("filename", filename);
 
   const uniqueName = `${Date.now()}-${filename}`;
   const filePath = path.join(UPLOAD_DIR, uniqueName);
@@ -47,7 +47,7 @@ exports.saveUpload = async (upload, ai_id, user_id, ctx) => {
     stored_path: `/uploads/${uniqueName}`,
     message_id: null
   });
-  console.log(file);
+  // console.log(file);
   
   return {
     id: file.id,

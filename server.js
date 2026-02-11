@@ -278,6 +278,6 @@ async function start() {
 
 start().catch((err) => {
   // start ก่อนมี req.log ให้ใช้ console ได้
-  console.error(err);
+  // console.error(err);
   process.exit(1);
 });

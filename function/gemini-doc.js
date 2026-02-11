@@ -389,9 +389,9 @@ Output JSON in ONE of these exact shapes only:
   }
 
   if (debug) {
-    console.log("payload typeof:", typeof payload, "isArray:", Array.isArray(payload));
-    console.log("payload keys:", payload && typeof payload === "object" ? Object.keys(payload).slice(0, 20) : null);
-    console.log("jsonTextUsed preview:", String(jsonTextUsed).slice(0, 800));
+    // console.log("payload typeof:", typeof payload, "isArray:", Array.isArray(payload));
+    // console.log("payload keys:", payload && typeof payload === "object" ? Object.keys(payload).slice(0, 20) : null);
+    // console.log("jsonTextUsed preview:", String(jsonTextUsed).slice(0, 800));
   }
 
   // สร้าง sheets ตาม payload

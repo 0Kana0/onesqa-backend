@@ -26,14 +26,17 @@ function extractAllTexts(historyList) {
 
   for (const msg of list) {
     const role = msg?.role || "user";
-    const content = Array.isArray(msg?.content) ? msg.content : Array.isArray(msg?.parts) ? msg.parts : [];
+    const content = Array.isArray(msg?.content)
+      ? msg.content
+      : Array.isArray(msg?.parts)
+        ? msg.parts
+        : [];
 
     const texts = content
       .map((p) => (typeof p?.text === "string" ? p.text : ""))
       .filter(Boolean);
 
     if (texts.length) {
-      // ใส่ role ช่วยให้ prompt อ่านง่ายขึ้น (คล้ายรวม history)
       lines.push(`${String(role).toUpperCase()}: ${texts.join("\n")}`);
     }
   }
@@ -47,7 +50,6 @@ function findLastDataUrlImage(historyList) {
     const content = Array.isArray(list[i]?.content) ? list[i].content : [];
     for (let j = content.length - 1; j >= 0; j--) {
       const p = content[j] || {};
-      // รองรับ shape ที่พบบ่อยใน Responses: {type:"input_image", image_url:"data:..."} หรือ {image_url:{url:"data:..."}}
       const url =
         typeof p.image_url === "string"
           ? p.image_url
@@ -79,18 +81,11 @@ function saveDataUrlImageToFile(dataUrl, outDir, fileBase = "input_reference") {
   return { outPath, mimeType };
 }
 
-function pickSize({ size, aspectRatio = "16:9", quality = "standard" } = {}) {
-  // allowed values ตาม API: 720x1280, 1280x720, 1024x1792, 1792x1024 :contentReference[oaicite:2]{index=2}
-  if (size) return size;
-
-  const hi = ["high", "large", "pro", "hd"].includes(String(quality).toLowerCase());
+function pick720pSize(aspectRatio = "16:9") {
   const ar = String(aspectRatio).trim();
-
-  if (ar === "9:16") return hi ? "1024x1792" : "720x1280";
-  if (ar === "16:9") return hi ? "1792x1024" : "1280x720";
-
-  // fallback
-  return hi ? "1792x1024" : "1280x720";
+  // บังคับ 720p เท่านั้น
+  if (ar === "9:16") return "720x1280";  // portrait 720p
+  return "1280x720";                     // landscape 720p (default)
 }
 
 function validateParams({ model, seconds, size }) {
@@ -105,8 +100,49 @@ function validateParams({ model, seconds, size }) {
     throw new Error(`Invalid seconds "${seconds}". Allowed: 4, 8, 12`);
   }
   if (size && !allowedSizes.has(size)) {
-    throw new Error(`Invalid size "${size}". Allowed: 720x1280, 1280x720, 1024x1792, 1792x1024`);
+    throw new Error(
+      `Invalid size "${size}". Allowed: 720x1280, 1280x720, 1024x1792, 1792x1024`
+    );
   }
+}
+
+// ------------------------------
+// Pricing helpers
+// ------------------------------
+
+// ✅ Sora video pricing (USD per second) ตามหน้า pricing ณ ตอนอัปเดตโค้ดนี้
+function estimateSoraCostUSD({ model, seconds, size }) {
+  const s = Number(seconds);
+  if (!Number.isFinite(s) || s <= 0) return 0;
+
+  // 720p tiers
+  if (model === "sora-2") {
+    // Portrait 720x1280 / Landscape 1280x720
+    return 0.10 * s;
+  }
+  if (model === "sora-2-pro") {
+    // 720p = $0.30/sec, 1792x1024 (หรือ 1024x1792) = $0.50/sec
+    const hiRes = size === "1792x1024" || size === "1024x1792";
+    return (hiRes ? 0.50 : 0.30) * s;
+  }
+  return 0;
+}
+
+// ✅ GPT-5 pricing (USD per 1M tokens) — Standard processing
+// (Input: $1.25 / 1M, Output: $10.00 / 1M)
+const GPT5_PRICE_PER_1M = {
+  input: 1.25,
+  output: 10.0,
+};
+
+function usdToGpt5Tokens(usd, direction = "output") {
+  const price = GPT5_PRICE_PER_1M[direction] ?? GPT5_PRICE_PER_1M.output;
+  const u = Number(usd);
+  if (!Number.isFinite(u) || u <= 0) return 0;
+
+  // tokens = usd / (price_per_1_token) = usd / (price_per_1M / 1e6)
+  const tokens = (u * 1_000_000) / price;
+  return Math.round(tokens);
 }
 
 /**
@@ -118,30 +154,41 @@ function validateParams({ model, seconds, size }) {
  * - model: "sora-2" | "sora-2-pro"
  * - seconds: 4 | 8 | 12
  * - aspectRatio: "16:9" | "9:16"
- * - quality: "standard" | "high"   (แค่เลือก size ให้ใหญ่ขึ้น)
- * - size: "1280x720" | "720x1280" | "1792x1024" | "1024x1792"  (ถ้าส่งมา จะ override)
  * - outDir: "./uploads"
  * - fileBase: "gen-video"
  * - pollIntervalMs: 15000
  * - timeoutMs: 10 * 60_000
- * - inputReferencePath: "path/to/image.png"  (ถ้าไม่ส่ง จะพยายาม auto-detect จาก historyList data URL)
+ * - inputReferencePath: "path/to/image.png"
+ *
+ * ✅ NOTE:
+ * - size/quality ถูก “ignore” เพราะบังคับ 720p ทุกอันตาม requirement
  *
  * return:
- * { files:[mp4Path], text:"", response: videoJob, prompt, usedImage:boolean, usage:{...tokens=0} }
+ * {
+ *   files:[mp4Path],
+ *   text:"",
+ *   response: videoJob,
+ *   prompt,
+ *   usedImage:boolean,
+ *   cost_usd:number,
+ *   token_equivalent:{ gpt5_input_tokens_eq, gpt5_output_tokens_eq, chosen_total_tokens, chosen_mode },
+ *   usage:{ input_tokens, output_tokens, total_tokens }
+ * }
  */
 exports.openaiGenerateVideo = async (
   historyList,
   {
-    model = "sora-2",
+    model = "sora-2-pro",
     seconds = 8,
     aspectRatio = "16:9",
-    size = "1280x720",
-    quality = "standard",
+    // ⛔ size/quality ถูกบังคับ override ให้เป็น 720p เสมอ
     outDir = "./uploads",
     fileBase = "gen-video",
     pollIntervalMs = 15_000,
     timeoutMs = 10 * 60_000,
-    inputReferencePath, // optional: ให้ path รูปมาเอง
+    inputReferencePath,
+    // เลือกว่าจะ “คิด token เทียบ GPT-5” แบบไหน (default: output เพราะแพงสุด/กันโควต้าไม่เฟ้อ)
+    tokenMode = "output", // "output" | "input"
   } = {}
 ) => {
   const openai = await getOpenAI();
@@ -150,13 +197,12 @@ exports.openaiGenerateVideo = async (
   const prompt = extractAllTexts(historyList);
   if (!prompt) throw new Error("Prompt is empty (no text found in historyList).");
 
-  const finalSize = pickSize({ size, aspectRatio, quality });
+  // ✅ บังคับ 720p ทุกครั้ง
+  const finalSize = pick720pSize(aspectRatio);
   validateParams({ model, seconds, size: finalSize });
 
   // ------------------------------
   // input_reference (optional)
-  // - ถ้ามี inputReferencePath ใช้อันนั้น
-  // - ไม่งั้นลองหา data-url image ล่าสุดใน historyList แล้วแปลงเป็นไฟล์ชั่วคราว
   // ------------------------------
   let inputRefStream = null;
   let usedImage = false;
@@ -180,7 +226,7 @@ exports.openaiGenerateVideo = async (
     model,
     prompt,
     seconds: String(seconds),
-    size: finalSize,
+    size: finalSize, // ✅ 720p เท่านั้น
     ...(inputRefStream ? { input_reference: inputRefStream } : {}),
   };
 
@@ -192,7 +238,9 @@ exports.openaiGenerateVideo = async (
   const start = Date.now();
   while (video?.status === "queued" || video?.status === "in_progress") {
     if (Date.now() - start > timeoutMs) {
-      throw new Error(`Timeout waiting for video generation (>${timeoutMs} ms). Last status=${video?.status}`);
+      throw new Error(
+        `Timeout waiting for video generation (>${timeoutMs} ms). Last status=${video?.status}`
+      );
     }
     await sleep(pollIntervalMs);
     video = await openai.videos.retrieve(video.id);
@@ -204,7 +252,7 @@ exports.openaiGenerateVideo = async (
   }
 
   // ------------------------------
-  // 3) download mp4 bytes (default variant is MP4)
+  // 3) download mp4 bytes
   // ------------------------------
   const res = await openai.videos.downloadContent(video.id);
   const blob = await res.blob();
@@ -213,15 +261,37 @@ exports.openaiGenerateVideo = async (
   const outPath = path.join(outDir, `${fileBase}.mp4`);
   fs.writeFileSync(outPath, buf);
 
-  // Video API ไม่มี usage แบบ token เหมือน text/image -> คืน 0 ไว้ให้โค้ด downstream ไม่พัง
-  const usage = { input_tokens: 0, output_tokens: 0, total_tokens: 0 };
+  // ------------------------------
+  // 4) Cost -> GPT-5 token equivalent
+  // ------------------------------
+  const cost_usd = estimateSoraCostUSD({ model, seconds, size: finalSize });
+
+  const gpt5_input_tokens_eq = usdToGpt5Tokens(cost_usd, "input");
+  const gpt5_output_tokens_eq = usdToGpt5Tokens(cost_usd, "output");
+
+  const chosen_total_tokens =
+    String(tokenMode).toLowerCase() === "input" ? gpt5_input_tokens_eq : gpt5_output_tokens_eq;
+
+  // ใส่ลง usage ให้ downstream เอาไปหักโควต้าได้เลย
+  const usage = {
+    input_tokens: 0,
+    output_tokens: chosen_total_tokens,
+    total_tokens: chosen_total_tokens,
+  };
 
   return {
     files: [outPath],
     text: "",
-    response: video, // video job metadata
+    response: video,
     prompt,
     usedImage,
+    cost_usd,
+    token_equivalent: {
+      gpt5_input_tokens_eq,
+      gpt5_output_tokens_eq,
+      chosen_total_tokens,
+      chosen_mode: String(tokenMode).toLowerCase() === "input" ? "input" : "output",
+    },
     usage,
   };
 };

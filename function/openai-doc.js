@@ -59,6 +59,36 @@ function normalizeHistoryForInput(historyList) {
   });
 }
 
+function normalizeHistoryForResponses(historyList) {
+  const list = Array.isArray(historyList) ? historyList : [];
+
+  return list.map((m) => {
+    // ✅ normalize role (กันเคส DB มี "model")
+    let role = String(m?.role || "user").toLowerCase();
+    if (role === "model") role = "assistant";
+    if (!["system", "user", "assistant"].includes(role)) role = "user";
+
+    const content = Array.isArray(m?.content) ? m.content : [];
+
+    const normContent = content
+      .map((b) => {
+        if (!b || typeof b !== "object") return null;
+
+        // ✅ ให้ type ถูกตาม role
+        if (role === "assistant" && b.type === "input_text") {
+          return { type: "output_text", text: String(b.text ?? "") };
+        }
+        if (role !== "assistant" && b.type === "output_text") {
+          return { type: "input_text", text: String(b.text ?? "") };
+        }
+        return b;
+      })
+      .filter(Boolean);
+
+    return { role, content: normContent };
+  });
+}
+
 // --------------------
 // Excel payload normalizers (เหมือนของคุณ)
 // --------------------
@@ -393,7 +423,7 @@ exports.openaiGenerateExcel = async (
   fs.mkdirSync(outDir, { recursive: true });
 
   // normalize assistant output_text -> input_text
-  let inputHistory = normalizeHistoryForInput(historyList);
+  let inputHistory = normalizeHistoryForResponses(historyList);
 
   // เติมคำสั่ง JSON ลงท้าย user ล่าสุด (ไม่แก้ historyList ต้นฉบับ)
   if (jsonInstruction) {
@@ -432,9 +462,9 @@ exports.openaiGenerateExcel = async (
   }
 
   if (debug) {
-    console.log("rawText preview:", String(rawText).slice(0, 800));
-    console.log("jsonTextUsed preview:", String(jsonTextUsed).slice(0, 800));
-    console.log("payload typeof:", typeof payload, "isArray:", Array.isArray(payload));
+    // console.log("rawText preview:", String(rawText).slice(0, 800));
+    // console.log("jsonTextUsed preview:", String(jsonTextUsed).slice(0, 800));
+    // console.log("payload typeof:", typeof payload, "isArray:", Array.isArray(payload));
   }
 
   // สร้าง sheets

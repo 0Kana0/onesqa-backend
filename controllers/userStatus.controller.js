@@ -13,7 +13,7 @@ exports.onlineUsers = async () => {
     raw: true, // ✅ เพิ่มบรรทัดนี้
   });
 
-  console.log(userStatusList);
+  // console.log(userStatusList);
 
   // ✅ ต้อง map array ออกมา ไม่ใช่ object เดียว
   return userStatusList.map((user) => ({
@@ -26,7 +26,7 @@ exports.onlineUsers = async () => {
 // ✅ ผู้ใช้ Login / ออนไลน์
 exports.setUserOnline = async (user_id, ctx) => {
   const userStatus = await User.findOne({ where: { id: user_id } });
-  console.log(userStatus);
+  // console.log(userStatus);
 
   await User.update(
     {

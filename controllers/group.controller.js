@@ -14,7 +14,7 @@ exports.listGroups = async ({ page, pageSize, where: filters = {} } = {}) => {
   // 0) เวลา today / month (TH) — ใช้ used_date
   // =========================
   const nowTH = moment.tz(TZ);
-  const startOfMonthTH = nowTH.clone().startOf("month");
+  const startOfMonthTH = nowTH.clone().startOf("month"); // ✅ fix
 
   const usedDateToday = nowTH.format("YYYY-MM-DD");
   const startOfMonthStr = startOfMonthTH.format("YYYY-MM-DD");
@@ -92,12 +92,14 @@ exports.listGroups = async ({ page, pageSize, where: filters = {} } = {}) => {
   // 5) รวม token ของทุก user ในกลุ่มนั้น แยกตาม model
   //    5.1 today/month จาก User_token.total_token (อิง used_date)
   //    5.2 token_count/token_all จาก User_ai
+  //    5.3 user_count (จำนวน user ต่อ group)
   // =========================
   const groupNames = [...new Set(rows.map((g) => g?.name).filter(Boolean))];
 
   let todayAgg = [];
   let monthAgg = [];
   let userAiAgg = [];
+  let userCountAgg = []; // ✅ เพิ่ม
 
   if (groupNames.length) {
     // --- today (SUM total_token) ---
@@ -117,9 +119,7 @@ exports.listGroups = async ({ page, pageSize, where: filters = {} } = {}) => {
         },
         { model: Ai, as: "ai", attributes: [], required: false },
       ],
-      where: {
-        used_date: usedDateToday,
-      },
+      where: { used_date: usedDateToday },
       group: [col("user.group_name"), col("ai.model_use_name")],
       raw: true,
     });
@@ -169,6 +169,20 @@ exports.listGroups = async ({ page, pageSize, where: filters = {} } = {}) => {
       group: [col("user.group_name"), col("ai.model_use_name")],
       raw: true,
     });
+
+    // ✅ --- user_count (COUNT users per group_name) ---
+    // หมายเหตุ: นับจากตาราง user โดยตรง (อิง user.group_name)
+    userCountAgg = await User.findAll({
+      attributes: [
+        ["group_name", "group_name"],
+        [fn("COUNT", col("User.id")), "user_count"],
+      ],
+      where: {
+        group_name: { [Op.in]: groupNames },
+      },
+      group: ["group_name"],
+      raw: true,
+    });
   }
 
   const todayMap = new Map(
@@ -195,12 +209,19 @@ exports.listGroups = async ({ page, pageSize, where: filters = {} } = {}) => {
     ])
   );
 
+  const userCountMap = new Map(
+    userCountAgg.map((r) => [String(r.group_name), Number(r.user_count) || 0])
+  );
+
   // =========================
-  // 6) ใส่ models ให้แต่ละ group
+  // 6) ใส่ models + user_count ให้แต่ละ group
   // =========================
   const items = rows.map((g) => {
     const group = g.toJSON ? g.toJSON() : g;
     const name = group.name;
+
+    // ✅ user_count ต่อ group
+    const user_count = userCountMap.get(name) ?? 0;
 
     // รวมรายชื่อโมเดลที่ group มี (กันซ้ำด้วย model_use_name)
     const modelMap = new Map();
@@ -250,7 +271,8 @@ exports.listGroups = async ({ page, pageSize, where: filters = {} } = {}) => {
       };
     });
 
-    return { ...group, models };
+    // ✅ เพิ่ม user_count ใน response ของ group
+    return { ...group, user_count, models };
   });
 
   return {
@@ -337,7 +359,7 @@ exports.getAllGroupsWithUserCount = async () => {
 exports.updateGroup = async (id, input, ctx) => {
   const locale = await getLocale(ctx);
 
-  console.log("input", input);
+  // console.log("input", input);
 
   // ===== helpers =====
   const fmt = (v) =>
@@ -835,7 +857,7 @@ exports.updateGroup = async (id, input, ctx) => {
             where: { user_id: user.id, ai_id: ev.aiId }
           })
 
-          console.log("user_ai_token", user_ai_token);
+          // console.log("user_ai_token", user_ai_token);
 
           await notifyUser({
             locale: "th",

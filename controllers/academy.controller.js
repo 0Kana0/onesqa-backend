@@ -174,7 +174,7 @@ async function onesqaPost(endpoint, data, headers, locale) {
       timeout: ONESQA_TIMEOUT,
     });
   } catch (err) {
-    console.log(err);
+    // console.log(err);
     if (isOnesqaDownError(err)) {
       throw new Error(
         locale === "th"
@@ -205,7 +205,7 @@ exports.syncAcademyFromApi = async (ctx) => {
   const table = qg.quoteTable(Academy.getTableName());
 
   for (let level = 1; level < 7; level++) {
-    console.log("academy_level_id =", level);
+    // console.log("academy_level_id =", level);
 
     const length = 1000;
 
@@ -234,7 +234,7 @@ exports.syncAcademyFromApi = async (ctx) => {
     });
 
     const academyArray = [...firstItems, ...restPages.flat()];
-    console.log("✅ academy fetched:", academyArray.length);
+    // console.log("✅ academy fetched:", academyArray.length);
 
     // ✅ apiIds ของชุดนี้ (ใช้ทั้งตัดไฟล์ + DELETE NOT IN)
     const apiIds = academyArray
@@ -388,7 +388,7 @@ exports.syncAcademyFromApi = async (ctx) => {
       }
     });
 
-    console.log(`✅ sync สำเร็จ (level=${level}, total=${academyArray.length})`);
+    // console.log(`✅ sync สำเร็จ (level=${level}, total=${academyArray.length})`);
   }
 
   return { message: "sync ข้อมูลสถานศึกษาสำเร็จ", status: "success" };

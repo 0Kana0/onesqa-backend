@@ -46,7 +46,7 @@ async function validateGroupInitTokenNotExceedAiTokenCount({
         token_count: { [Op.ne]: 0 },
       },
     });
-    console.log("allUseToken", allUseToken);
+    // console.log("allUseToken", allUseToken);
 
     if (allUseToken + initToken > tokenCount) {
       violations.push({ ai_id: aiId, init_token: initToken, token_count: tokenCount });

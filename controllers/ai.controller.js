@@ -162,7 +162,7 @@ exports.sumTokenCountByModel = async () => {
   `;
 
   const [rows] = await sequelize.query(sql);
-  console.log(rows);
+  // console.log(rows);
   return rows;
 };
 
@@ -262,8 +262,8 @@ exports.updateAi = async (id, input, ctx) => {
     );
   }
 
-  console.log("row", row);
-  console.log("input", input);
+  // console.log("row", row);
+  // console.log("input", input);
 
   // flag เอาไว้เช็คว่ามีการเปลี่ยนไหม
   let shouldResetNotification = false;

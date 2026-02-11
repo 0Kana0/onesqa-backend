@@ -154,7 +154,7 @@ exports.deleteChat = async (id) => {
     msg.files.map((f) => f.file_name)
   );
 
-  console.log(allFileNames);
+  // console.log(allFileNames);
   await deleteMultipleFiles(allFileNames);
 
   const count = await Chat.destroy({ where: { id } });

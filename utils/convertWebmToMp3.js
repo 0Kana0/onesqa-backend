@@ -45,7 +45,7 @@ function convertWebmToMp3(fileName, inputPath, outputPath) {
           });
 
           if (!fileData) {
-            console.warn("File record not found for:", fileName);
+            // console.warn("File record not found for:", fileName);
           } else {
             // อัปเดต row เดิมให้เป็นข้อมูล mp3
             await File.update(
@@ -66,7 +66,7 @@ function convertWebmToMp3(fileName, inputPath, outputPath) {
             await fs.unlink(inputPath);
           } catch (e) {
             // ไม่ให้ล้มทั้งฟังก์ชัน แต่ log ไว้
-            console.error("Failed to delete original webm file:", inputPath, e);
+            // console.error("Failed to delete original webm file:", inputPath, e);
           }
 
           // แล้ว resolve พร้อมข้อมูลไฟล์ใหม่

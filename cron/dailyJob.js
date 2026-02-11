@@ -1137,7 +1137,7 @@ async function syncAcademyFromApiOne() {
   return { message: "sync ข้อมูลสถานศึกษาสำเร็จ", status: "success" };
 };
 
-/***************** ดึงข้อมูล SAR File ของระดับที่ 2-6 ทุก 02:01 *****************/
+/***************** ดึงข้อมูล SAR File ของระดับที่ 2-6 ทุก 13:01 *****************/
 async function syncAcademyFromApiTwoSix() {
   const headers = {
     Accept: "application/json",
@@ -1553,8 +1553,8 @@ function startDailyJobs() {
   dailyUserCount();
 
   // ⚠️ ปกติไม่ต้องรันทันที (กันพลาด)
-  //syncUsersFromApi();
-  //syncAcademyFromApiOne();
+  syncUsersFromApi();
+  syncAcademyFromApiOne();
   //syncAcademyFromApiTwoSix();
   //cleanupOldNotifications();
   //cleanupOldUserDailyActives();
@@ -1590,11 +1590,11 @@ function startDailyJobs() {
     { timezone: TZ }
   );
 
-  // ✅ ดึง SAR File ทุกวัน 02:01
+  // ✅ ดึง SAR File ทุกวัน 13:01
   cron.schedule(
     "1 2 * * *",
     () => {
-      console.log("⏰ Running daily job (02:01): syncAcademyFromApiTwoSix()");
+      console.log("⏰ Running daily job (13:01): syncAcademyFromApiTwoSix()");
       syncAcademyFromApiTwoSix();
     },
     { timezone: TZ }

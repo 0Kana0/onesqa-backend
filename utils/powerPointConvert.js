@@ -76,7 +76,7 @@ async function extractTextFromPowerPoint(filePath) {
       });
     } catch (err) {
       // sharp แปลงไม่ได้ (เช่น emf / wmf / บาง svg) → ข้ามแปลง แต่ยังมีใน imagesAll
-      console.warn("⚠️ Cannot convert image to PNG:", baseName, "-", err.message);
+      // console.warn("⚠️ Cannot convert image to PNG:", baseName, "-", err.message);
     }
   }
 

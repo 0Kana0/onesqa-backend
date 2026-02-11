@@ -26,7 +26,7 @@ async function setUserLoginHistory(user_id, event_type, ctx) {
   // const osName = parsed.os.name;
   // const osVersion = parsed.os.version;
 
-  console.log(browserName, browserVersion);
+  // console.log(browserName, browserVersion);
   
   const loginHistory = await User_login_history.create({
     user_id: user_id,

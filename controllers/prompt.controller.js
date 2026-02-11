@@ -55,7 +55,7 @@ exports.createPrompt = async (input, ctx) => {
     new_status: null,
   });
 
-  console.log(input);
+  // console.log(input);
   
   // validation อื่น ๆ เช่น ชื่อห้ามซ้ำ:
   return await Prompt.create(input);
@@ -80,8 +80,8 @@ exports.updatePrompt = async (id, input, ctx) => {
     throw new Error(locale === "th" ? "หัวข้อ Prompt ห้ามซ้ำกัน" : "Prompt title must be unique");
   }
 
-  console.log(row.prompt_detail);
-  console.log(input.prompt_detail);
+  // console.log(row.prompt_detail);
+  // console.log(input.prompt_detail);
 
   // ถ้ามีการเปลี่ยนเเปลงสถานะ ให้ทำการเก็บ log ไว้
   if (row.prompt_title !== input.prompt_title || row.prompt_detail !== input.prompt_detail) {

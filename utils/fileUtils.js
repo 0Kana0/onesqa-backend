@@ -9,14 +9,14 @@ const path = require("path");
 async function deleteFile(filePath) {
   try {
     await fs.unlink(filePath);
-    console.log(`✅ ลบไฟล์สำเร็จ: ${filePath}`);
+    // console.log(`✅ ลบไฟล์สำเร็จ: ${filePath}`);
     return true;
   } catch (err) {
     if (err.code === "ENOENT") {
-      console.warn(`⚠️ ไม่พบไฟล์: ${filePath}`);
+      // console.warn(`⚠️ ไม่พบไฟล์: ${filePath}`);
       return false;
     }
-    console.error(`❌ ลบไฟล์ไม่สำเร็จ: ${filePath}`, err);
+    // console.error(`❌ ลบไฟล์ไม่สำเร็จ: ${filePath}`, err);
     throw err;
   }
 }
@@ -47,12 +47,12 @@ async function deleteMultipleFiles(fileNames = []) {
   await Promise.all(
     fileNames.map(async (fileName) => {
       const filePath = path.join(__dirname, "..", 'uploads', fileName);
-      console.log(filePath);
+      // console.log(filePath);
       
       await deleteFile(filePath);
     })
   );
-  console.log("✅ ลบไฟล์ทั้งหมดเรียบร้อย");
+  // console.log("✅ ลบไฟล์ทั้งหมดเรียบร้อย");
 }
 
 module.exports = {

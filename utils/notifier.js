@@ -119,7 +119,7 @@ async function notifyUser(opts = {}) {
           meta: { userId, locale, type }, // optional ไว้ debug/log
         });
       } catch (err) {
-        console.log("enqueueEmail error:", err);
+        // console.log("enqueueEmail error:", err);
       }
     }
   }

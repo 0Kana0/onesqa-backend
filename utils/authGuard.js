@@ -5,7 +5,7 @@ exports.requireAuth = (ctx) => {
   //console.log("ctx", ctx?.req?.user);
   
   if (ctx?.req?.user === null || ctx?.req?.user == undefined) {
-    console.log("Unauthorized");
+    // console.log("Unauthorized");
     
     throw new Error('Unauthorized'); // หรือโยน GraphQLError พร้อม code ก็ได้
   }
@@ -22,7 +22,7 @@ exports.checkUserInDB = async (ctx) => {
   //console.log("findUser", user);
 
   if (user === null || user == undefined) {
-    console.log("No User Found");
+    // console.log("No User Found");
     
     throw new Error('No User Found'); // หรือโยน GraphQLError พร้อม code ก็ได้
   }

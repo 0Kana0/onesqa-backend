@@ -145,7 +145,8 @@ async function ensureIndexedFile({ db, chatId, file, extractors, transcribeAudio
     text = out?.text || "";
   } else if (ext === ".mp4") {
     // mp4 → transcript
-    text = await transcribeAudio(filePath);
+    const { text: transcript } = await transcribeAudio(filePath);
+    text = transcript || "";
   } else {
     // ไม่ใช่ไฟล์ที่เราจะ index
     return { indexed: false, count: 0 };
@@ -209,11 +210,11 @@ async function retrieveContext({ db, chatId, fileIds, query, topK = 20, candidat
     q.replace(/[ \t]+/g, " ").trim(),    // normalize spacing
   ])];
 
-  console.log("variants", variants);
+  // console.log("variants", variants);
   
   const qVecs = await embedTexts(variants);
   if (!qVecs?.length) return { contextText: "", hits: [] };
-  console.log("qVecs", qVecs);
+  // console.log("qVecs", qVecs);
 
   const rows = await Rag_chunk.findAll({
     where: { chat_id: chatId, ...(fileIds?.length ? { file_id: fileIds } : {}) },

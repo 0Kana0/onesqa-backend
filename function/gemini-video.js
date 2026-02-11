@@ -18,11 +18,6 @@ async function getAI() {
 /**
  * historyList: [{ role:"user"|"model", parts:[{text?...}, {inlineData?...}, ...] }, ...]
  * messageList: [{text:"..."}, {inlineData:{mimeType,data}}, ...] | string
- *
- * หมายเหตุ:
- * - Veo generateVideos รับ "prompt" เป็น string (ไม่ใช่ contents แบบ generateContent)
- * - โค้ดนี้จะ "รวม text" จาก history + messageList เป็น prompt เดียว
- * - ถ้า messageList มี inlineData (image/*) จะใช้เป็น image-to-video (starting frame) อัตโนมัติ
  */
 exports.geminiGenerateVideo = async (
   historyList,
@@ -31,29 +26,31 @@ exports.geminiGenerateVideo = async (
     model = "veo-3.1-fast-generate-preview",
     outDir = "./uploads",
     fileBase = "veo-video",
-    aspectRatio = "16:9", // "16:9" | "9:16"
-    resolution, // optional: "720p" | "1080p" | "4k"
+    aspectRatio = "16:9",
+    // resolution จะถูก ignore และบังคับเป็น 720p เสมอ
+    resolution,
+
     pollIntervalMs = 10_000,
-    timeoutMs = 10 * 60_000, // 10 นาที
-    // optional: บังคับภาพเริ่มต้นเอง (ถ้าไม่อยากให้ auto-detect จาก messageList)
+    timeoutMs = 10 * 60_000,
+
     inputImage, // { imageBytes: base64String, mimeType: "image/png" }
 
-    // ✅ เพิ่ม: นับ token ของ prompt ก่อนยิงงาน (default: true)
     countTokens = true,
-    // ✅ เพิ่ม: ถ้า countTokens ด้วย veo ไม่ได้ ให้ fallback ไปโมเดลนี้
     tokenCountFallbackModel = "gemini-2.0-flash",
+
+    // ✅ ส่งค่าเงินจริงที่ใช้ไป (USD) เพื่อให้คำนวณ cost_equivalent ได้
+    spentUsd, // number เช่น 1.2
   } = {}
 ) => {
   const ai = await getAI();
   fs.mkdirSync(outDir, { recursive: true });
 
-  // ---------- helper: เก็บ text จาก parts ----------
+  // ---------- helper ----------
   const extractTextsFromParts = (parts) =>
     (Array.isArray(parts) ? parts : [])
       .map((p) => (typeof p?.text === "string" ? p.text : ""))
       .filter(Boolean);
 
-  // ---------- helper: หา image inlineData อันแรก (image/*) ----------
   const extractFirstInlineImage = (parts) => {
     const arr = Array.isArray(parts) ? parts : [];
     const hit = arr.find(
@@ -64,12 +61,29 @@ exports.geminiGenerateVideo = async (
         p.inlineData.mimeType.startsWith("image/")
     );
     if (!hit) return null;
-
     return {
-      imageBytes: hit.inlineData.data, // base64 string
+      imageBytes: hit.inlineData.data,
       mimeType: hit.inlineData.mimeType,
     };
   };
+
+  // ✅ ราคา Gemini 2.5 Pro (Standard)
+  function gemini25ProStandardPricePer1M(promptTokens) {
+    const over = Number(promptTokens || 0) > 200_000;
+    return {
+      bracket: over ? ">200k" : "<=200k",
+      inputUsdPer1M: over ? 2.5 : 1.25,
+      outputUsdPer1M: over ? 15.0 : 10.0,
+    };
+  }
+
+  function costUsdToTokens(costUsd, usdPer1M) {
+    const c = Number(costUsd);
+    const p = Number(usdPer1M);
+    if (!Number.isFinite(c) || c <= 0) return 0;
+    if (!Number.isFinite(p) || p <= 0) return 0;
+    return Math.round((c / p) * 1_000_000);
+  }
 
   // ---------- 1) รวม prompt ----------
   const historyText = (Array.isArray(historyList) ? historyList : [])
@@ -89,7 +103,7 @@ exports.geminiGenerateVideo = async (
   // ---------- 2) auto-detect image-to-video ----------
   const detectedImage = inputImage || extractFirstInlineImage(msgParts);
 
-  // ---------- ✅ 2.5) นับ token ของ prompt ----------
+  // ---------- 2.5) นับ token ของ prompt ----------
   let tokenMeta = {
     modelUsed: null,
     fallbackUsed: false,
@@ -107,7 +121,6 @@ exports.geminiGenerateVideo = async (
         totalTokens: r?.totalTokens ?? null,
       };
     } catch (e) {
-      // fallback: นับด้วย gemini tokenizer (ประมาณการ)
       const r = await ai.models.countTokens({
         model: tokenCountFallbackModel,
         contents: prompt,
@@ -121,24 +134,25 @@ exports.geminiGenerateVideo = async (
     }
   }
 
-  // ---------- 3) สร้าง request ----------
+  // ---------- 3) request (บังคับ 720p) ----------
+  const FORCED_RESOLUTION = "720p";
+
   const req = {
     model,
     prompt,
     ...(detectedImage ? { image: detectedImage } : {}),
     config: {
       ...(aspectRatio ? { aspectRatio } : {}),
-      ...(resolution ? { resolution } : {}),
+      resolution: FORCED_RESOLUTION,
     },
   };
 
-  // ลบ config ถ้าว่าง (กันบาง SDK strict)
   if (!req.config || Object.keys(req.config).length === 0) delete req.config;
 
-  // ---------- 4) เรียก generateVideos (เป็น long-running operation) ----------
+  // ---------- 4) generateVideos ----------
   let operation = await ai.models.generateVideos(req);
 
-  // ---------- 5) poll จนเสร็จ หรือ timeout ----------
+  // ---------- 5) poll ----------
   const start = Date.now();
   while (!operation?.done) {
     if (Date.now() - start > timeoutMs) {
@@ -148,33 +162,54 @@ exports.geminiGenerateVideo = async (
     operation = await ai.operations.getVideosOperation({ operation });
   }
 
-  // ---------- 6) ตรวจว่ามี video กลับมาจริง ----------
+  // ---------- 6) check video ----------
   const videoFile = operation?.response?.generatedVideos?.[0]?.video;
   if (!videoFile) {
     throw new Error("No video returned (operation.response.generatedVideos[0].video not found).");
   }
 
-  // ---------- 7) ดาวน์โหลดไฟล์ mp4 ----------
+  // ---------- 7) download mp4 ----------
   const outPath = path.join(outDir, `${fileBase}.mp4`);
   await ai.files.download({
     file: videoFile,
     downloadPath: outPath,
   });
 
-  // ✅ สำหรับระบบคุณ (เหมือนที่เก็บใน DB):
-  const input_token = tokenMeta?.promptTokenCount ?? 0;
-  const output_token = 0; // วิดีโอไม่ได้คืน token แบบข้อความ
+  // ---------- 8) cost_equivalent ----------
+  const promptTokens = Number(tokenMeta?.promptTokenCount ?? 0);
+  const price = gemini25ProStandardPricePer1M(promptTokens);
+
+  const costEquiv =
+    Number.isFinite(Number(spentUsd)) && Number(spentUsd) > 0
+      ? {
+          basisModel: "gemini-2.5-pro",
+          pricingTier: "standard",
+          bracket: price.bracket,
+          spentUsd: Number(spentUsd),
+          inputUsdPer1M: price.inputUsdPer1M,
+          outputUsdPer1M: price.outputUsdPer1M,
+          equivalentInputTokens: costUsdToTokens(spentUsd, price.inputUsdPer1M),
+          equivalentOutputTokens: costUsdToTokens(spentUsd, price.outputUsdPer1M),
+        }
+      : null;
+
+  const input_token = promptTokens || 0;
+
+  // ✅ ตามที่สั่ง: output_token ใช้ equivalentInputTokens
+  const output_token = costEquiv?.equivalentInputTokens ?? 0;
 
   return {
     files: [outPath],
-    text: "", // video generation ปกติไม่มี text output
+    text: "",
     response: operation,
     prompt,
     usedImage: Boolean(detectedImage),
 
-    // ✅ เพิ่มกลับไปให้ใช้งาน
+    forcedResolution: FORCED_RESOLUTION,
+
     tokens: tokenMeta,
     input_token,
-    output_token,
+    output_token, // ✅ ใช้ equivalentInputTokens แล้ว
+    cost_equivalent: costEquiv,
   };
 };

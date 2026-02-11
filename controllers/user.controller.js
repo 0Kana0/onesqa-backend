@@ -286,8 +286,8 @@ exports.updateUser = async (id, input, ctx) => {
 
     const { user_role, user_ai, ...userFields } = input;
 
-    console.log(user.user_ai);
-    console.log("user_ai", user_ai);
+    // console.log(user.user_ai);
+    // console.log("user_ai", user_ai);
 
     const changedTokenAiIds = new Set();
     let isRoleChanged = false;
@@ -721,9 +721,9 @@ async function upsertUserCountDaily(totalUser) {
 
     if (rows.length) {
       await User_count.bulkCreate(rows, { ignoreDuplicates: true });
-      console.log(
-        `📊 Backfilled user_count: ${rows[0].count_date} -> ${rows[rows.length - 1].count_date} (total_user=${carry})`
-      );
+      // console.log(
+      //   `📊 Backfilled user_count: ${rows[0].count_date} -> ${rows[rows.length - 1].count_date} (total_user=${carry})`
+      // );
     }
   }
 
@@ -739,9 +739,9 @@ async function upsertUserCountDaily(totalUser) {
       { total_user: totalUser },
       { where: { count_date: todayStr } }
     );
-    console.log(`📊 Updated user_count today (${todayStr}) total_user=${totalUser}`);
+    // console.log(`📊 Updated user_count today (${todayStr}) total_user=${totalUser}`);
   } else {
-    console.log(`📊 Created user_count today (${todayStr}) total_user=${totalUser}`);
+    // console.log(`📊 Created user_count today (${todayStr}) total_user=${totalUser}`);
   }
 
   return { count_date: todayStr, total_user: totalUser };
@@ -815,7 +815,7 @@ exports.syncUsersFromApi = async (ctx) => {
     const items = Array.isArray(res.data?.data) ? res.data.data : [];
     assessors.push(...items);
   }
-  console.log("✅ assessors fetched:", assessors.length);
+  // console.log("✅ assessors fetched:", assessors.length);
 
   // 1) ✅ ดึง username ที่มีอยู่แล้วใน DB ไว้ตัดของเดิมออกจาก API
   const dbUsers = await User.findAll({
@@ -964,11 +964,11 @@ exports.syncUsersFromApi = async (ctx) => {
 
     const quota = quotaByAiId.get(aiId);
 
-    console.log("aiId", aiId);
-    console.log("dbUsed", dbUsed);
-    console.log("apiAdd(new)", apiAdd);
-    console.log("total", total);
-    console.log("quota", quota);
+    // console.log("aiId", aiId);
+    // console.log("dbUsed", dbUsed);
+    // console.log("apiAdd(new)", apiAdd);
+    // console.log("total", total);
+    // console.log("quota", quota);
 
     // ไม่เจอ ai => error
     if (quota == null) {
@@ -1203,25 +1203,29 @@ exports.syncUsersFromApi = async (ctx) => {
         // ✅ ถ้า ONESQA ล่ม -> ต้อง throw ออกไปทันที
         if (err?.message === "ระบบ ONESQA ไม่พร้อมใช้งาน") throw err;
 
-        console.error(`❌ group_api_id=${g.group_api_id} (${g.name}) error:`, err.message);
-        if (err.response) console.error("response data:", err.response.data);
+        // console.error(`❌ group_api_id=${g.group_api_id} (${g.name}) error:`, err.message);
+        if (err.response) {
+          // console.error("response data:", err.response.data);
+        }
       }
     }
 
-    console.log("✅ sync summary:", {
-      created,
-      updated,
-      deletedDup,
-      deletedMissing,
-      userRoleCreated,
-      userAiCreated,
-    });
+    // console.log("✅ sync summary:", {
+    //   created,
+    //   updated,
+    //   deletedDup,
+    //   deletedMissing,
+    //   userRoleCreated,
+    //   userAiCreated,
+    // });
   } catch (err) {
     // ✅ ถ้า ONESQA ล่ม -> ต้อง throw ออกไปทันที
     if (err?.message === "ระบบ ONESQA ไม่พร้อมใช้งาน") throw err;
 
-    console.error("❌ main error:", err.message);
-    if (err.response) console.error("response data:", err.response.data);
+    // console.error("❌ main error:", err.message);
+    if (err.response) {
+      // console.error("response data:", err.response.data);
+    }
   }
 
   // ส่วนของข้อมูล ผู้ประเมินภายนอก
@@ -1404,21 +1408,23 @@ exports.syncUsersFromApi = async (ctx) => {
       }
     });
 
-    console.log("✅ assessor sync summary:", {
-      fetched: assessors.length,
-      created,
-      updated,
-      deletedDup,
-      deletedMissing,
-      userRoleCreated,
-      userAiCreated,
-    });
+    // console.log("✅ assessor sync summary:", {
+    //   fetched: assessors.length,
+    //   created,
+    //   updated,
+    //   deletedDup,
+    //   deletedMissing,
+    //   userRoleCreated,
+    //   userAiCreated,
+    // });
   } catch (err) {
     // ✅ ถ้า ONESQA ล่ม -> ต้อง throw ออกไปทันที
     if (err?.message === "ระบบ ONESQA ไม่พร้อมใช้งาน") throw err;
 
-    console.error("❌ assessor sync error:", err.message);
-    if (err.response) console.error("response data:", err.response.data);
+    // console.error("❌ assessor sync error:", err.message);
+    if (err.response) {
+      // console.error("response data:", err.response.data);
+    }
   }
 
     // 🔢 นับจำนวน user ทั้งหมดจริงจากระบบ

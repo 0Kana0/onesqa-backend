@@ -59,7 +59,7 @@ async function auditLog({
     await Log.create(payload, { transaction });
   } catch (err) {
     // ไม่ throw เพื่อไม่ให้กระทบการทำงานหลัก
-    console.error('[auditLog] create failed:', err?.message || err);
+    // console.error('[auditLog] create failed:', err?.message || err);
   }
 }
 

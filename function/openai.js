@@ -16,14 +16,18 @@ exports.transcribeAudio = async (filePath) => {
   const r = await client.audio.transcriptions.create({
     // รองรับ mp3/mp4/m4a/wav/webm ฯลฯ
     file: fs.createReadStream(filePath),
-    model: "gpt-4o-mini-transcribe"
+    model: "gpt-4o-mini-transcribe",
   });
 
-  console.log(r.text);
-  console.log(r.usage); // << เอาไปทำ dashboard/หักโควต้าได้
+  //console.log(r.text);
+  //console.log(r.usage);
 
-  return r.text || "";
-}
+  return {
+    text: r.text || "",
+    usage: r.usage || null,
+    raw: r, // (ออปชัน) เผื่ออยากดูฟิลด์อื่น
+  };
+};
 
 // ข่าว/อัปเดต/ทันเหตุการณ์
 const KW_NEWS_TH = [

@@ -25,7 +25,7 @@ async function upsertDailyUserCountPlus() {
 
     // กันข้อมูลเพี้ยน: lastDate อยู่อนาคต
     if (lastDate && lastDate.isAfter(today, "day")) {
-      console.log("⚠️ user_count last count_date is in the future — skip");
+      // console.log("⚠️ user_count last count_date is in the future — skip");
       return { count_date: todayStr, backfilled: 0 };
     }
 
@@ -66,17 +66,17 @@ async function upsertDailyUserCountPlus() {
         { count_date: todayStr, total_user: 1 },
         { transaction: t }
       );
-      console.log(`📊 Created user_count today (${todayStr}) total_user=1`);
+      // console.log(`📊 Created user_count today (${todayStr}) total_user=1`);
       if (backfilled) {
-        console.log(`📊 Backfilled user_count ${backfilled} day(s) using carry=${carry}`);
+        // console.log(`📊 Backfilled user_count ${backfilled} day(s) using carry=${carry}`);
       }
       return { row: created, backfilled };
     }
 
     await rowToday.increment({ total_user: 1 }, { transaction: t });
-    console.log(`📊 Increment user_count today (${todayStr}) +1`);
+    // console.log(`📊 Increment user_count today (${todayStr}) +1`);
     if (backfilled) {
-      console.log(`📊 Backfilled user_count ${backfilled} day(s) using carry=${carry}`);
+      // console.log(`📊 Backfilled user_count ${backfilled} day(s) using carry=${carry}`);
     }
     return { row: rowToday, backfilled };
   });

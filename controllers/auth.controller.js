@@ -31,7 +31,7 @@ const https = require("https");
 const httpsAgent = new https.Agent({ rejectUnauthorized: false });
 
 exports.me = async (ctx) => {
-  console.log("ctx", ctx?.req?.user?.id);
+  // console.log("ctx", ctx?.req?.user?.id);
   
   const user = await User.findByPk(ctx?.req?.user?.id, {
     attributes: { exclude: ["password"] }, // กันเผลอส่ง password ออกไป
@@ -141,7 +141,7 @@ exports.signin = async ({ username, password, locale }, ctx) => {
   }
 
   // ====== จากตรงนี้ “คง logic เดิมของคุณไว้” ======
-  console.log(response);
+  // console.log(response);
 
   // ถ้าชื่อผู้ใช้หรือรหัสผ่านไม่ถูกต้อง
   if (
@@ -366,7 +366,7 @@ exports.signin = async ({ username, password, locale }, ctx) => {
 // ✅ 2) Fallback แยกส่วน: ใช้ “บัญชีที่ backup ไว้ใน DB” (กรณี ONESQA ล่ม/เรียกไม่ได้)
 async function signinBackup({ username, password, locale }, ctx, rawErr) {
   // (จะ log ก็ได้ แต่อย่า log password)
-  console.error("ONESQA unavailable -> fallback login:", rawErr?.message);
+  // console.error("ONESQA unavailable -> fallback login:", rawErr?.message);
 
   const exists = await User.findOne({
     include: [
@@ -728,7 +728,7 @@ exports.signinWithIdennumber = async ({ idennumber, otp_type, locale }, ctx) => 
       }
     );
 
-    console.log(rsp);
+    // console.log(rsp);
     
     if (rsp.data.detail !== "OK.") {
       throw new Error(locale === "th" ? "ส่ง OTP ไม่สำเร็จ" : "Failed to send OTP");
@@ -774,7 +774,7 @@ exports.signinWithIdennumber = async ({ idennumber, otp_type, locale }, ctx) => 
   // ทำ login ตามปกติ
 };
 async function signinWithIdennumberBackup({ idennumber, otp_type, locale }, ctx, rawErr) {
-  console.error("ONESQA unavailable -> fallback OTP:", rawErr?.message);
+  // console.error("ONESQA unavailable -> fallback OTP:", rawErr?.message);
 
   const isBlank = (v) => v == null || String(v).trim() === "";
 
@@ -1001,7 +1001,7 @@ exports.verifySigninWithIdennumber = async ({ idennumber, otp, locale }, ctx) =>
 // ---------- 4) ใช้ refreshToken (จาก cookie) ขอ access token ใหม่ ----------
 exports.refreshToken = async (ctx) => {
   // เรียกใช้ refreshToken จาก cookies
-  console.log("ctx", ctx);
+  // console.log("ctx", ctx);
   const token = ctx.req.cookies?.refreshToken;
   if (!token) throw new Error("ไม่พบ refreshtoken ถูกส่งมา");
 

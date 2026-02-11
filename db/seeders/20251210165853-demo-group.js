@@ -50,7 +50,7 @@ module.exports = {
       }
 
       if (!groups.length) {
-        console.warn(`⚠️ ไม่พบ group code = "${code}" หลัง bulkInsert`);
+        // console.warn(`⚠️ ไม่พบ group code = "${code}" หลัง bulkInsert`);
         await t.commit();
         return;
       }
@@ -64,7 +64,7 @@ module.exports = {
       });
 
       if (!ais.length) {
-        console.warn('⚠️ ไม่พบข้อมูลในตาราง ai — จะไม่สร้าง group_ai ใด ๆ');
+        // console.warn('⚠️ ไม่พบข้อมูลในตาราง ai — จะไม่สร้าง group_ai ใด ๆ');
         await t.commit();
         return;
       }
@@ -117,7 +117,7 @@ module.exports = {
       );
 
       if (!groups.length) {
-        console.warn(`⚠️ (down) ไม่พบ group code = "${code}"`);
+        // console.warn(`⚠️ (down) ไม่พบ group code = "${code}"`);
         await t.commit();
         return;
       }
