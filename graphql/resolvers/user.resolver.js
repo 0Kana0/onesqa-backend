@@ -20,6 +20,11 @@ module.exports = {
       await checkUserInDB(ctx);
 			return await UserController.updateUser(id, input, ctx);
 		},
+    updateUsers: async (_parent, { input }, ctx) => {
+			requireAuth(ctx); // ต้องล็อกอินก่อน
+      await checkUserInDB(ctx);
+			return await UserController.updateUsers(input, ctx);
+		},
     updateThemeAndLocale: async (_parent, { id, input }, ctx) => {
 			requireAuth(ctx); // ต้องล็อกอินก่อน
       await checkUserInDB(ctx);

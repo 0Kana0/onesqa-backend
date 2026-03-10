@@ -14,7 +14,7 @@ exports.listGroups = async ({ page, pageSize, where: filters = {} } = {}) => {
   // 0) เวลา today / month (TH) — ใช้ used_date
   // =========================
   const nowTH = moment.tz(TZ);
-  const startOfMonthTH = nowTH.clone().startOf("month"); // ✅ fix
+  const startOfMonthTH = nowTH.clone().startOf("month");
 
   const usedDateToday = nowTH.format("YYYY-MM-DD");
   const startOfMonthStr = startOfMonthTH.format("YYYY-MM-DD");
@@ -36,6 +36,12 @@ exports.listGroups = async ({ page, pageSize, where: filters = {} } = {}) => {
     const keyword = `%${String(search).trim()}%`;
     groupWhere[Op.or] = [{ name: { [Op.like]: keyword } }];
   }
+
+  // ✅ ไม่แสดง name = 'กลุ่มผู้ประเมินภายนอก'
+  const EXCLUDED_GROUP_NAME = "กลุ่มผู้ประเมินภายนอก";
+  const groupWhereFinal = {
+    [Op.and]: [groupWhere, { name: { [Op.ne]: EXCLUDED_GROUP_NAME } }],
+  };
 
   // =========================
   // 2) include ของ Ai (default model ของ group)
@@ -64,7 +70,7 @@ exports.listGroups = async ({ page, pageSize, where: filters = {} } = {}) => {
   // 4) query groups
   // =========================
   const { rows, count } = await Group.findAndCountAll({
-    where: groupWhere,
+    where: groupWhereFinal, // ✅ ใช้ตัวกรองที่ตัดกลุ่มออกแล้ว
     include: [
       aiInclude,
       {
@@ -99,7 +105,7 @@ exports.listGroups = async ({ page, pageSize, where: filters = {} } = {}) => {
   let todayAgg = [];
   let monthAgg = [];
   let userAiAgg = [];
-  let userCountAgg = []; // ✅ เพิ่ม
+  let userCountAgg = [];
 
   if (groupNames.length) {
     // --- today (SUM total_token) ---
@@ -170,16 +176,13 @@ exports.listGroups = async ({ page, pageSize, where: filters = {} } = {}) => {
       raw: true,
     });
 
-    // ✅ --- user_count (COUNT users per group_name) ---
-    // หมายเหตุ: นับจากตาราง user โดยตรง (อิง user.group_name)
+    // --- user_count (COUNT users per group_name) ---
     userCountAgg = await User.findAll({
       attributes: [
         ["group_name", "group_name"],
         [fn("COUNT", col("User.id")), "user_count"],
       ],
-      where: {
-        group_name: { [Op.in]: groupNames },
-      },
+      where: { group_name: { [Op.in]: groupNames } },
       group: ["group_name"],
       raw: true,
     });

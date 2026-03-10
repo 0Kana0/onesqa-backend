@@ -289,12 +289,14 @@ async function syncUsersFromApi() {
     where: { group_api_id: { [Op.ne]: null } },
     raw: true,
   });
+
   // ✅ หา group เพื่อดึง group_ai (init_token)
   const assessorGroup = await Group.findOne({
     where: { name: assessorGroupName },
     attributes: ["id", "name", "status"],
     raw: true,
   });
+
   const assessorGroupAis = await Group_ai.findAll({
     where: { group_id: assessorGroup.id },
     attributes: ["ai_id", "init_token"],
@@ -306,7 +308,6 @@ async function syncUsersFromApi() {
   // -------------------------------
   const length = 1000;
 
-  // ✅ REPLACE: axios.post -> onesqaPostUser
   const first = await onesqaPostUser(
     "/assessments/get_assessor",
     { start: "0", length: String(length) },
@@ -322,7 +323,6 @@ async function syncUsersFromApi() {
   for (let page = 1; page < pages; page++) {
     const start = page * length;
 
-    // ✅ REPLACE: axios.post -> onesqaPostUser
     const res = await onesqaPostUser(
       "/assessments/get_assessor",
       { start: String(start), length: String(length) },
@@ -341,9 +341,7 @@ async function syncUsersFromApi() {
   });
 
   const existingUsernameSet = new Set(
-    dbUsers
-      .map((u) => String(u.username || "").trim())
-      .filter(Boolean)
+    dbUsers.map((u) => String(u.username || "").trim()).filter(Boolean)
   );
 
   // 2) ✅ DB USED: รวม token_count ของ User_ai แยกตาม ai_id (token_count != 0)
@@ -361,7 +359,6 @@ async function syncUsersFromApi() {
   // 3) ✅ API ADD: สะสม (newUserCount * init_token) แยกตาม ai_id
   const apiAddByAiId = new Map(); // ai_id -> token ที่จะเพิ่มจาก user ใหม่
 
-  // helper: key ของ user จาก API get_user
   // helper: key ของ assessor จาก API get_assessor (ใช้ id_card)
   const getAssessorKey = (a) => String(a?.id_card ?? "").trim();
 
@@ -386,7 +383,7 @@ async function syncUsersFromApi() {
       // กันนับซ้ำในรอบเดียวกัน
       for (const a of newAssessors) {
         const key = getAssessorKey(a);
-        if (key) existingUsernameSet.add(key); // ✅ add id_card เข้า set
+        if (key) existingUsernameSet.add(key);
       }
 
       // คิด token เพิ่มของ assessor ตาม group_ai ของ assessorGroup
@@ -399,13 +396,12 @@ async function syncUsersFromApi() {
         apiAddByAiId.set(aiId, (apiAddByAiId.get(aiId) || 0) + add);
       }
     }
-  } 
+  }
 
   // ----------------------------------------------------
-  // 3.B) ✅ ของเดิม: วนทุก group แล้วคิดเฉพาะ user ใหม่จาก get_user (ใช้ username ตามเดิม)
+  // 3.B) ✅ ของเดิม: วนทุก group แล้วคิดเฉพาะ user ใหม่จาก get_user
   // ----------------------------------------------------
   for (const g of existingGroups) {
-    // 3.1) ดึง group_ai ของกลุ่มนี้
     const groupAis = await Group_ai.findAll({
       where: { group_id: g.id },
       attributes: ["ai_id", "init_token"],
@@ -413,7 +409,6 @@ async function syncUsersFromApi() {
     });
     if (!groupAis?.length) continue;
 
-    // ✅ REPLACE: axios.post -> onesqaPostUser
     const response = await onesqaPostUser(
       "/basics/get_user",
       { group_id: String(g.group_api_id) },
@@ -423,7 +418,6 @@ async function syncUsersFromApi() {
     const users = Array.isArray(response.data?.data) ? response.data.data : [];
     if (!users.length) continue;
 
-    // 3.3) ตัด user ที่มีอยู่แล้วใน DB ออก (เทียบด้วย username)
     const newUsers = users.filter((u) => {
       const username = String(u?.username || "").trim();
       if (!username) return false;
@@ -433,13 +427,11 @@ async function syncUsersFromApi() {
     const newUserCount = newUsers.length;
     if (newUserCount === 0) continue;
 
-    // กันการนับซ้ำ username ข้ามกลุ่มในรอบเดียวกัน
     for (const u of newUsers) {
       const username = String(u?.username || "").trim();
       if (username) existingUsernameSet.add(username);
     }
 
-    // 3.4) คูณ newUserCount กับ init_token ของ group_ai แต่ละตัว แล้วรวมใส่ Map
     for (const ga of groupAis) {
       const aiId = Number(ga.ai_id);
       const initToken = Number(ga.init_token) || 0;
@@ -454,8 +446,6 @@ async function syncUsersFromApi() {
   const aiIds = Array.from(
     new Set([...dbUsedByAiId.keys(), ...apiAddByAiId.keys()])
   );
-
-  //if (aiIds.length === 0) return; // ไม่มีอะไรต้องเช็ค
 
   const ais = await Ai.findAll({
     where: { id: { [Op.in]: aiIds } },
@@ -475,19 +465,12 @@ async function syncUsersFromApi() {
 
     const quota = quotaByAiId.get(aiId);
 
-    console.log("aiId", aiId);
-    console.log("dbUsed", dbUsed);
-    console.log("apiAdd(new)", apiAdd);
-    console.log("total", total);
-    console.log("quota", quota);
-
     // ไม่เจอ ai => error
     if (quota == null) {
       exceeded.push({ aiId, dbUsed, apiAdd, total, quota: null });
       continue;
     }
 
-    // กันเคส total=0 แล้ว quota=0 จะชนเงื่อนไขโดยไม่จำเป็น
     if (total > 0 && total >= quota) {
       exceeded.push({ aiId, dbUsed, apiAdd, total, quota });
     }
@@ -496,9 +479,10 @@ async function syncUsersFromApi() {
     throw new Error("AI token quota is insufficient");
   }
 
-  // ส่วนของข้อมูล เจ้าหน้าที่
+  // =====================================================
+  // ส่วนของข้อมูล "เจ้าหน้าที่"
+  // =====================================================
   try {
-    // ✅ หา role_id ของ "เจ้าหน้าที่" และ "ผู้ดูแลระบบ" ก่อน (ทำครั้งเดียว)
     const [officerRole, adminRole] = await Promise.all([
       Role.findOne({
         where: { role_name_th: officerRoleName },
@@ -512,12 +496,9 @@ async function syncUsersFromApi() {
       }),
     ]);
 
-    if (!officerRole?.id) {
-      throw new Error(`Role not found: ${officerRoleName}`);
-    }
-    if (!adminRole?.id) {
-      throw new Error(`Role not found: ${adminRoleName}`);
-    }
+    if (!officerRole?.id) throw new Error(`Role not found: ${officerRoleName}`);
+    if (!adminRole?.id) throw new Error(`Role not found: ${adminRoleName}`);
+
     const officerRoleId = officerRole.id;
     const adminRoleId = adminRole.id;
 
@@ -536,7 +517,6 @@ async function syncUsersFromApi() {
           raw: true,
         });
 
-        // ✅ REPLACE: axios.post -> onesqaPostUser
         const response = await onesqaPostUser(
           "/basics/get_user",
           { group_id: String(g.group_api_id) },
@@ -545,25 +525,27 @@ async function syncUsersFromApi() {
 
         const users = Array.isArray(response.data?.data) ? response.data.data : [];
 
-        staffApiCount += users.length
+        staffApiCount += users.length;
 
         const apiUsernames = users
           .map((u) => (u?.username || "").trim())
           .filter((x) => x && x !== SPECIAL_ID);
 
-        const isAdminGroup = String(g?.name ?? "").trim().toLowerCase() === "admin";
+        const isAdminGroup =
+          String(g?.name ?? "").trim().toLowerCase() === "admin";
         const roleIdForGroup = isAdminGroup ? adminRoleId : officerRoleId;
 
         await db.sequelize.transaction(async (t) => {
-          // =========================
           // 1) ลบ user ที่ไม่อยู่ใน API แล้ว (เฉพาะ group_name นี้) ยกเว้น Admin01
-          // =========================
           const whereMissing =
             apiUsernames.length > 0
               ? {
                   group_name: g.name,
                   username: {
-                    [Op.and]: [{ [Op.ne]: SPECIAL_ID }, { [Op.notIn]: apiUsernames }],
+                    [Op.and]: [
+                      { [Op.ne]: SPECIAL_ID },
+                      { [Op.notIn]: apiUsernames },
+                    ],
                   },
                 }
               : {
@@ -587,17 +569,14 @@ async function syncUsersFromApi() {
             deletedMissing += ids.length;
           }
 
-          // =========================
           // 2) Upsert user จาก API + ลบ duplicate username (ถ้ามี)
-          // =========================
           for (const apiUser of users) {
             const username = (apiUser?.username || "").trim();
             if (!username) continue;
+            if (username === SPECIAL_ID) continue; // ❌ ไม่แตะ Admin01
 
-            // ❌ ไม่แตะ Admin01
-            if (username === SPECIAL_ID) continue;
-
-            const payload = {
+            // ✅ payload ที่ "ไม่รวม ai_access" สำหรับ user เก่า
+            const payloadBase = {
               firstname: apiUser?.fname ?? "",
               lastname: apiUser?.lname ?? "",
               username,
@@ -605,9 +584,12 @@ async function syncUsersFromApi() {
               phone: apiUser?.phone ?? "",
               position: apiUser?.position ?? "",
               group_name: g.name,
-              ai_access: g.status,
               login_type: "NORMAL",
             };
+
+            // ✅ เฉพาะ user ใหม่เท่านั้นที่จะตั้ง ai_access ครั้งแรก
+            const payloadCreate = { ...payloadBase, ai_access: g.status };
+            const payloadUpdate = { ...payloadBase }; // <- ไม่แก้ ai_access
 
             const found = await User.findAll({
               where: { username },
@@ -631,20 +613,17 @@ async function syncUsersFromApi() {
             const isNewUser = !userRow;
 
             if (!userRow) {
-              userRow = await User.create(payload, { transaction: t }); // ✅ id auto
+              userRow = await User.create(payloadCreate, { transaction: t });
               created++;
             } else {
-              await User.update(payload, {
+              await User.update(payloadUpdate, {
                 where: { id: userRow.id },
                 transaction: t,
               });
               updated++;
             }
 
-            // =========================
-            // 3) สร้าง user_role (role = "เจ้าหน้าที่") ถ้ายังไม่มี
-            // =========================
-            // ✅ บันทึก role เฉพาะ "ครั้งแรก" (user ใหม่)
+            // 3) สร้าง user_role (เฉพาะ user ใหม่)
             if (isNewUser) {
               const existingUserRole = await User_role.findOne({
                 where: { user_id: userRow.id, role_id: roleIdForGroup },
@@ -661,11 +640,7 @@ async function syncUsersFromApi() {
               }
             }
 
-            // =========================
             // 4) sync user_ai ตาม group_ai ของกลุ่มนี้
-            //    - user ใหม่: create token ตาม init_token
-            //    - user เก่า: ไม่ update token (แต่ถ้าไม่มี record ให้ create)
-            // =========================
             for (const ga of groupAis) {
               const aiId = Number(ga.ai_id);
               const initToken = Number(ga.init_token ?? 0);
@@ -677,7 +652,6 @@ async function syncUsersFromApi() {
               });
 
               if (!ua) {
-                // ✅ ถ้าไม่มี record -> สร้าง
                 await User_ai.create(
                   {
                     user_id: userRow.id,
@@ -689,28 +663,23 @@ async function syncUsersFromApi() {
                   { transaction: t }
                 );
                 userAiCreated++;
-              } else {
-                // ✅ มีอยู่แล้ว:
-                // - user ใหม่: ปกติจะเพิ่งสร้าง record ใหม่อยู่แล้ว (แต่ถ้ามีอยู่ก็ไม่ต้องแก้)
-                // - user เก่า: "ห้าม update token" ตาม requirement
-                // do nothing
-                if (isNewUser) {
-                  // do nothing
-                }
               }
+              // ✅ มีอยู่แล้ว: ไม่ update token
             }
           }
         });
       } catch (err) {
-        // ✅ ถ้า ONESQA ล่ม -> ต้อง throw ออกไปทันที
         if (err?.message === "ระบบ ONESQA ไม่พร้อมใช้งาน") throw err;
 
-        console.error(`❌ group_api_id=${g.group_api_id} (${g.name}) error:`, err.message);
+        console.error(
+          `❌ group_api_id=${g.group_api_id} (${g.name}) error:`,
+          err.message
+        );
         if (err.response) console.error("response data:", err.response.data);
       }
     }
 
-    console.log("✅ sync summary:", {
+    console.log("✅ staff sync summary:", {
       created,
       updated,
       deletedDup,
@@ -719,14 +688,15 @@ async function syncUsersFromApi() {
       userAiCreated,
     });
   } catch (err) {
-    // ✅ ถ้า ONESQA ล่ม -> ต้อง throw ออกไปทันที
     if (err?.message === "ระบบ ONESQA ไม่พร้อมใช้งาน") throw err;
 
-    console.error("❌ main error:", err.message);
+    console.error("❌ staff main error:", err.message);
     if (err.response) console.error("response data:", err.response.data);
   }
 
-  // ส่วนของข้อมูล ผู้ประเมินภายนอก
+  // =====================================================
+  // ส่วนของข้อมูล "ผู้ประเมินภายนอก"
+  // =====================================================
   try {
     const groupAis = await Group_ai.findAll({
       where: { group_id: assessorGroup.id },
@@ -734,7 +704,6 @@ async function syncUsersFromApi() {
       raw: true,
     });
 
-    // ✅ หา role_id ของ "ผู้ประเมินภายนอก"
     const assessorRole = await Role.findOne({
       where: { role_name_th: assessorRoleName },
       attributes: ["id"],
@@ -744,10 +713,6 @@ async function syncUsersFromApi() {
 
     assessorApiCount += assessors.length;
 
-    // -------------------------------
-    // 2) เตรียม username จาก assessor
-    // ใช้ id_card เป็นหลัก (เสถียร/ไม่ซ้ำ) ถ้าไม่มีค่อย fallback
-    // -------------------------------
     const toUsername = (a) => {
       const idCard = (a?.id_card || "").trim();
       if (idCard) return idCard;
@@ -760,7 +725,7 @@ async function syncUsersFromApi() {
 
     const apiUsernames = assessors
       .map((a) => toUsername(a))
-      .filter((u) => u && u !== SPECIAL_ID); // เผื่อมีหลุดมา
+      .filter((u) => u && u !== SPECIAL_ID);
 
     let created = 0;
     let updated = 0;
@@ -769,17 +734,17 @@ async function syncUsersFromApi() {
     let userRoleCreated = 0;
     let userAiCreated = 0;
 
-    // -------------------------------
-    // 3) Sync ลง DB (เหมือน flow ก่อนหน้า)
-    // -------------------------------
     await db.sequelize.transaction(async (t) => {
-      // 3.1) ลบ user ที่ไม่อยู่ใน API แล้ว (เฉพาะกลุ่มผู้ประเมินภายนอก) ยกเว้น Admin01
+      // 1) ลบ user ที่ไม่อยู่ใน API แล้ว (เฉพาะกลุ่มผู้ประเมินภายนอก) ยกเว้น Admin01
       const whereMissing =
         apiUsernames.length > 0
           ? {
               group_name: assessorGroupName,
               username: {
-                [Op.and]: [{ [Op.ne]: SPECIAL_ID }, { [Op.notIn]: apiUsernames }],
+                [Op.and]: [
+                  { [Op.ne]: SPECIAL_ID },
+                  { [Op.notIn]: apiUsernames },
+                ],
               },
             }
           : {
@@ -803,25 +768,28 @@ async function syncUsersFromApi() {
         deletedMissing += ids.length;
       }
 
-      // 3.2) upsert assessor ทีละคน
+      // 2) upsert assessor ทีละคน
       for (const a of assessors) {
         const username = toUsername(a);
         if (!username) continue;
-        if (username === SPECIAL_ID) continue; // ❌ ไม่แตะ
+        if (username === SPECIAL_ID) continue;
 
-        const payload = {
+        // ✅ payload ที่ "ไม่รวม ai_access" สำหรับ user เก่า
+        const payloadBase = {
           firstname: a?.name ?? "",
           lastname: a?.lastname ?? "",
           username,
           email: a?.email ?? "",
           phone: a?.tel ?? "",
           group_name: assessorGroupName,
-          ai_access: assessorGroup?.status,
-          login_type: "INSPEC", // ถ้าต้องการแยกผู้ประเมินเป็น INSPEC เปลี่ยนเป็น "INSPEC"
+          login_type: "INSPEC",
           position: "",
         };
 
-        // กันเคส username ซ้ำหลายแถว
+        // ✅ เฉพาะ user ใหม่เท่านั้นที่จะตั้ง ai_access ครั้งแรก
+        const payloadCreate = { ...payloadBase, ai_access: assessorGroup?.status };
+        const payloadUpdate = { ...payloadBase }; // <- ไม่แก้ ai_access
+
         const found = await User.findAll({
           where: { username },
           order: [["id", "ASC"]],
@@ -843,18 +811,17 @@ async function syncUsersFromApi() {
         const isNewUser = !userRow;
 
         if (!userRow) {
-          userRow = await User.create(payload, { transaction: t });
+          userRow = await User.create(payloadCreate, { transaction: t });
           created++;
         } else {
-          await User.update(payload, {
+          await User.update(payloadUpdate, {
             where: { id: userRow.id },
             transaction: t,
           });
           updated++;
         }
 
-        // 3.3) สร้าง user_role = ผู้ประเมินภายนอก ถ้ายังไม่มี
-        // ✅ role: ทำเฉพาะ "user ใหม่" เท่านั้น (คนเดิมไม่แตะ role)
+        // 3) สร้าง user_role = ผู้ประเมินภายนอก (เฉพาะ user ใหม่)
         if (isNewUser) {
           const existingUserRole = await User_role.findOne({
             where: { user_id: userRow.id, role_id: assessorRoleId },
@@ -871,8 +838,7 @@ async function syncUsersFromApi() {
           }
         }
 
-        // 3.4) user_ai: ถ้า user ใหม่ -> create token ตาม init_token
-        //     ถ้า user เก่า -> "ไม่ update token" (แต่ถ้าไม่มี record ให้ create)
+        // 4) user_ai: ถ้าไม่มี record ให้ create (ไม่ update token)
         for (const ga of groupAis) {
           const aiId = Number(ga.ai_id);
           const initToken = Number(ga.init_token ?? 0);
@@ -895,12 +861,6 @@ async function syncUsersFromApi() {
               { transaction: t }
             );
             userAiCreated++;
-          } else {
-            // ✅ มีอยู่แล้ว: ไม่ update token ตาม requirement (ทั้ง user ใหม่/เก่า)
-            // do nothing
-            if (isNewUser) {
-              // do nothing
-            }
           }
         }
       }
@@ -916,14 +876,13 @@ async function syncUsersFromApi() {
       userAiCreated,
     });
   } catch (err) {
-    // ✅ ถ้า ONESQA ล่ม -> ต้อง throw ออกไปทันที
     if (err?.message === "ระบบ ONESQA ไม่พร้อมใช้งาน") throw err;
 
     console.error("❌ assessor sync error:", err.message);
     if (err.response) console.error("response data:", err.response.data);
   }
 
-    // 🔢 นับจำนวน user ทั้งหมดจริงจากระบบ
+  // 🔢 นับจำนวน user ทั้งหมดจริงจากระบบ
   const totalUser = staffApiCount + assessorApiCount;
 
   // ✅ บันทึกแบบรายวัน + backfill วันที่ขาด

@@ -129,6 +129,18 @@ module.exports = `
     alert: Boolean
   }
 
+  input UserTokenModelInput {
+    model: String!       # ชื่อ model จาก header (ตัดคำว่า Token แล้ว)
+    token_count: Int     # token ที่จะตั้งค่า (จะอัปเดตเฉพาะที่เปลี่ยน)
+  }
+
+  input UpdateUsersTokenRowInput {
+    name: String
+    group_name: String
+    ai_access: Boolean
+    models: [UserTokenModelInput!]!
+  }
+
   extend type Query {
     users(page: Int, pageSize: Int, where: UserFilterInput): UserPage!
     user(id: ID!): User
@@ -136,6 +148,7 @@ module.exports = `
 
   extend type Mutation {
     updateUser(id: ID!, input: UserInput!): User!
+    updateUsers(input: [UpdateUsersTokenRowInput!]!): [User!]!
     updateThemeAndLocale(id: ID!, input: ThemeAndLocaleInput!): User!
     deleteUser(id: ID!): Boolean!
     syncUsersFromApi: SyncUser

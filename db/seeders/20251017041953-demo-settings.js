@@ -17,7 +17,7 @@ module.exports = {
         setting_name_en: "Email Notifications",
         setting_detail_th: "ส่งการแจ้งเตือนไปยังอีเมลของคุณ",
         setting_detail_en: "Send notifications to your email",
-        activity: true,
+        activity: false,
       },
     ];
 

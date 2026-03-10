@@ -1,7 +1,7 @@
 // utils/updateTokenAndNotify.js
 const { Op } = require("sequelize");
 const db = require("../db/models");
-const { Ai, User_ai, User, User_role } = db;
+const { Ai, Ai_backup, User_ai, User, User_role } = db;
 const { calcPercent } = require("./checkTokenQuota");
 const { notifyUser } = require("./notifier");
 const { getLocale } = require("../utils/currentUser");
@@ -13,7 +13,7 @@ function fmt(n, locale = "en-US") {
 }
 
 /**
- * อัปเดต token (Ai + User_ai) แล้วเช็ค % / จำนวนคงเหลือ เพื่อส่งแจ้งเตือน
+ * อัปเดต token (Ai + Ai_backup + User_ai) แล้วเช็ค % / จำนวนคงเหลือ เพื่อส่งแจ้งเตือน
  */
 async function updateTokenAndNotify({
   ctx,
@@ -43,15 +43,23 @@ async function updateTokenAndNotify({
   // 1) อัปเดต token_count (หักออก)
   // -------------------------
   const aiUpdateOptions = { where: { id: aiId } };
+  const aiBackupUpdateOptions = { where: { id: aiId } };
   const userAiUpdateOptions = { where: { ai_id: aiId, user_id: userId } };
   if (transaction) {
     aiUpdateOptions.transaction = transaction;
+    aiBackupUpdateOptions.transaction = transaction;
     userAiUpdateOptions.transaction = transaction;
   }
 
   await Ai.update(
     { token_count: Ai.sequelize.literal(`token_count - ${used}`) },
     aiUpdateOptions
+  );
+
+  // ✅ เพิ่ม Ai_backup: หักเฉพาะ token_count อย่างเดียว
+  await Ai_backup.update(
+    { token_count: Ai_backup.sequelize.literal(`token_count - ${used}`) },
+    aiBackupUpdateOptions
   );
 
   await User_ai.update(

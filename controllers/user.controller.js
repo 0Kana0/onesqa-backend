@@ -1,7 +1,7 @@
 // controllers/user.controller.js
 const axios = require("axios");
 require("dotenv").config();
-const { Op, fn, col, where: whereFn } = require("sequelize");
+const { Op, fn, col, where } = require("sequelize");
 const db = require("../db/models"); // หรือ '../../db/models' ถ้าโปรเจกต์คุณใช้ path นั้น
 const { User, User_role, User_ai, Role, Ai, Chat, Message, Group, Group_ai, User_count, User_token } = db;
 const { auditLog } = require("../utils/auditLog"); // ปรับ path ให้ตรง
@@ -638,6 +638,461 @@ exports.updateUser = async (id, input, ctx) => {
       transaction: t,
     });
   });
+};
+
+exports.updateUsers = async (input, ctx) => {
+  const auditQueue = [];
+  const notifyQueue = [];
+
+  const result = await User.sequelize.transaction(async (t) => {
+    const locale = await getLocale(ctx);
+
+    if (!Array.isArray(input) || input.length === 0) {
+      return [];
+    }
+
+    const normalizeText = (v) =>
+      String(v ?? "")
+        .trim()
+        .replace(/\s+/g, " ");
+
+    const makeUserKey = (name, groupName) =>
+      `${normalizeText(name).toLowerCase()}||${normalizeText(groupName).toLowerCase()}`;
+
+    const makeModelKey = (model) => normalizeText(model).toLowerCase();
+
+    const toApproval = (val) => {
+      if (typeof val === "string") {
+        return ["true", "1", "yes", "y"].includes(val.toLowerCase());
+      }
+      if (typeof val === "number") return val === 1;
+      return !!val;
+    };
+
+    const thLabel = (val) => (toApproval(val) ? "อนุมัติ" : "ไม่อนุมัติ");
+    const enLabel = (val) => (toApproval(val) ? "Active" : "Inactive");
+
+    // ---------------- รวม input ซ้ำของ user เดียวกัน ----------------
+    const mergedRowsMap = new Map();
+
+    for (const row of input) {
+      const name = normalizeText(row?.name);
+      const groupName = normalizeText(row?.group_name);
+      const models = Array.isArray(row?.models) ? row.models : [];
+
+      if (!name || !groupName) continue;
+
+      const userKey = makeUserKey(name, groupName);
+
+      if (!mergedRowsMap.has(userKey)) {
+        mergedRowsMap.set(userKey, {
+          name,
+          group_name: groupName,
+          ai_access: row?.ai_access,
+          modelsMap: new Map(),
+        });
+      }
+
+      const rowRef = mergedRowsMap.get(userKey);
+
+      if (row?.ai_access !== undefined) {
+        rowRef.ai_access = row.ai_access;
+      }
+
+      for (const m of models) {
+        const modelName = normalizeText(m?.model);
+        if (!modelName) continue;
+
+        const tokenCount =
+          m?.token_count === null || m?.token_count === undefined
+            ? null
+            : Number(m.token_count);
+
+        if (tokenCount !== null && !Number.isInteger(tokenCount)) {
+          throw new Error(
+            locale === "th"
+              ? `token_count ของ model (${modelName}) ไม่ถูกต้อง`
+              : `Invalid token_count for model (${modelName})`
+          );
+        }
+
+        rowRef.modelsMap.set(makeModelKey(modelName), {
+          model: modelName,
+          token_count: tokenCount,
+        });
+      }
+    }
+
+    const mergedRows = [...mergedRowsMap.values()].map((r) => ({
+      name: r.name,
+      group_name: r.group_name,
+      ai_access: r.ai_access,
+      models: [...r.modelsMap.values()],
+    }));
+
+    if (!mergedRows.length) {
+      return [];
+    }
+
+    // ---------------- โหลด user ตาม group_name ก่อน แล้ว match name ใน JS ----------------
+    const groupNames = [...new Set(mergedRows.map((r) => r.group_name))];
+
+    const users = await User.findAll({
+      where: {
+        group_name: { [Op.in]: groupNames },
+      },
+      include: [
+        {
+          model: User_ai,
+          as: "user_ai",
+          required: false,
+          include: [
+            {
+              model: Ai,
+              as: "ai",
+              attributes: [
+                "id",
+                "model_name",
+                "model_use_name",
+                "model_type",
+                "message_type",
+                "token_count",
+              ],
+              required: false,
+            },
+          ],
+        },
+      ],
+      transaction: t,
+    });
+
+    const userMap = new Map();
+
+    for (const user of users) {
+      const fullName = normalizeText(`${user.firstname ?? ""} ${user.lastname ?? ""}`);
+      const key = makeUserKey(fullName, user.group_name);
+
+      if (userMap.has(key)) {
+        throw new Error(
+          locale === "th"
+            ? `พบผู้ใช้ซ้ำในระบบ: ${fullName} / ${user.group_name}`
+            : `Duplicate user found in system: ${fullName} / ${user.group_name}`
+        );
+      }
+
+      userMap.set(key, user);
+    }
+
+    // ---------------- โหลด ai ทั้งหมด แล้ว map จาก model header -> ai ----------------
+    const aiRows = await Ai.findAll({
+      attributes: ["id", "model_name", "model_use_name", "token_count"],
+      transaction: t,
+    });
+
+    const aiMap = new Map();
+    const aiById = new Map();
+
+    for (const ai of aiRows) {
+      aiById.set(Number(ai.id), ai);
+
+      const key1 = makeModelKey(ai.model_use_name);
+      if (key1) aiMap.set(key1, ai);
+
+      const key2 = makeModelKey(ai.model_name);
+      if (key2 && !aiMap.has(key2)) aiMap.set(key2, ai);
+    }
+
+    // ---------------- resolve input -> user + user_ai ที่จะเปลี่ยน ----------------
+    const resolvedRows = [];
+    const deltaByAiId = new Map();
+
+    for (const row of mergedRows) {
+      const userKey = makeUserKey(row.name, row.group_name);
+      const user = userMap.get(userKey);
+
+      if (!user) {
+        throw new Error(
+          locale === "th"
+            ? `ไม่พบผู้ใช้: ${row.name} / ${row.group_name}`
+            : `User not found: ${row.name} / ${row.group_name}`
+        );
+      }
+
+      const existingUserAiMap = new Map(
+        (user.user_ai || []).map((ua) => [Number(ua.ai_id), ua])
+      );
+
+      const changes = [];
+
+      for (const modelInput of row.models) {
+        const ai = aiMap.get(makeModelKey(modelInput.model));
+
+        if (!ai) {
+          throw new Error(
+            locale === "th"
+              ? `ไม่พบ model (${modelInput.model}) ในระบบ`
+              : `Model not found in system (${modelInput.model})`
+          );
+        }
+
+        const oldUserAi = existingUserAiMap.get(Number(ai.id));
+
+        if (!oldUserAi) {
+          throw new Error(
+            locale === "th"
+              ? `ผู้ใช้ ${row.name} / ${row.group_name} ไม่มี model (${modelInput.model}) ใน user_ai`
+              : `User ${row.name} / ${row.group_name} does not have model (${modelInput.model}) in user_ai`
+          );
+        }
+
+        const oldToken = oldUserAi.token_count ?? null;
+        const newToken = modelInput.token_count ?? null;
+
+        if (oldToken !== newToken) {
+          changes.push({
+            ai,
+            oldUserAi,
+            oldToken,
+            newToken,
+          });
+
+          const delta = (newToken ?? 0) - (oldToken ?? 0);
+          const aiId = Number(ai.id);
+
+          deltaByAiId.set(aiId, (deltaByAiId.get(aiId) || 0) + delta);
+        }
+      }
+
+      const hasAiAccessInput = row.ai_access !== undefined;
+      const oldAiAccess = user.ai_access;
+      const newAiAccess = row.ai_access;
+      const isAiAccessChanged =
+        hasAiAccessInput && oldAiAccess !== newAiAccess;
+
+      resolvedRows.push({
+        user,
+        changes,
+        hasAiAccessInput,
+        isAiAccessChanged,
+        oldAiAccess,
+        newAiAccess,
+      });
+    }
+
+    // ---------------- ตรวจยอด token รวมของทุก user ที่เปลี่ยน ----------------
+    for (const [aiId, totalDelta] of deltaByAiId.entries()) {
+      const aiData = aiById.get(aiId);
+
+      if (!aiData) {
+        throw new Error(
+          locale === "th"
+            ? `ไม่พบข้อมูล AI id=${aiId}`
+            : `AI not found id=${aiId}`
+        );
+      }
+
+      const allUseToken =
+        (await User_ai.sum("token_count", {
+          where: {
+            ai_id: aiId,
+            token_count: { [Op.ne]: 0 },
+          },
+          transaction: t,
+        })) || 0;
+
+      const projectedTotal = Number(allUseToken) + Number(totalDelta);
+
+      if (projectedTotal >= Number(aiData.token_count)) {
+        throw new Error(
+          locale === "th"
+            ? "จำนวน token ที่เหลืออยู่ไม่เพียงพอ"
+            : "Insufficient remaining tokens"
+        );
+      }
+    }
+
+    // ---------------- update DB ก่อน แล้วค่อย queue log/notify ----------------
+    for (const row of resolvedRows) {
+      const {
+        user,
+        changes,
+        hasAiAccessInput,
+        isAiAccessChanged,
+        oldAiAccess,
+        newAiAccess,
+      } = row;
+
+      // -------- ai_access --------
+      if (hasAiAccessInput && isAiAccessChanged) {
+        const th_message = `กำหนด AI Access ของผู้ใช้งาน (${user.firstname} ${user.lastname})`;
+        const en_message = `Set AI Access for user (${user.firstname} ${user.lastname})`;
+
+        // สำคัญ: ใช้ oldAiAccess ที่ capture ไว้ก่อน update
+        await user.update(
+          { ai_access: newAiAccess },
+          { transaction: t }
+        );
+
+        auditQueue.push({
+          ctx,
+          locale: "th",
+          log_type: "PERSONAL",
+          old_data: th_message,
+          new_data: th_message,
+          old_status: oldAiAccess,
+          new_status: newAiAccess,
+        });
+
+        auditQueue.push({
+          ctx,
+          locale: "en",
+          log_type: "PERSONAL",
+          old_data: en_message,
+          new_data: en_message,
+          old_status: oldAiAccess,
+          new_status: newAiAccess,
+        });
+
+        notifyQueue.push({
+          locale: "th",
+          recipient_locale: user.locale,
+          loginAt: user.loginAt,
+          userId: user.id,
+          title: "เเจ้งเตือนตั้งค่า Model ของผู้ใช้งาน",
+          message: `กำหนด AI Access ของผู้ใช้งาน จาก ${thLabel(oldAiAccess)} เป็น ${thLabel(newAiAccess)}`,
+          type: "INFO",
+          to: user.email,
+        });
+
+        notifyQueue.push({
+          locale: "en",
+          recipient_locale: user.locale,
+          loginAt: user.loginAt,
+          userId: user.id,
+          title: "User Model Settings Notification",
+          message: `Your AI access has been changed from ${enLabel(oldAiAccess)} to ${enLabel(newAiAccess)}.`,
+          type: "INFO",
+          to: user.email,
+        });
+      }
+
+      // -------- token --------
+      for (const ch of changes) {
+        const modelUseName =
+          ch.oldUserAi?.ai?.model_use_name ||
+          ch.ai?.model_use_name ||
+          ch.ai?.model_name;
+
+        const oldTokenText = Number(ch.oldToken ?? 0).toLocaleString();
+        const newTokenText = Number(ch.newToken ?? 0).toLocaleString();
+
+        const th_old_message = `จำนวน Token ของ Model (${modelUseName}) ของผู้ใช้งาน (${user.firstname} ${user.lastname}) ${oldTokenText}`;
+        const th_new_message = `จำนวน Token ของ Model (${modelUseName}) ของผู้ใช้งาน (${user.firstname} ${user.lastname}) ${newTokenText}`;
+
+        const en_old_message = `Token count for model (${modelUseName}) for user (${user.firstname} ${user.lastname}) ${oldTokenText}`;
+        const en_new_message = `Token count for model (${modelUseName}) for user (${user.firstname} ${user.lastname}) ${newTokenText}`;
+
+        await ch.oldUserAi.update(
+          {
+            token_count: ch.newToken,
+            token_all: ch.newToken,
+            is_notification: false,
+          },
+          { transaction: t }
+        );
+
+        auditQueue.push({
+          ctx,
+          locale: "th",
+          log_type: "PERSONAL",
+          old_data: th_old_message,
+          new_data: th_new_message,
+          old_status: null,
+          new_status: null,
+        });
+
+        auditQueue.push({
+          ctx,
+          locale: "en",
+          log_type: "PERSONAL",
+          old_data: en_old_message,
+          new_data: en_new_message,
+          old_status: null,
+          new_status: null,
+        });
+
+        notifyQueue.push({
+          locale: "th",
+          recipient_locale: user.locale,
+          loginAt: user.loginAt,
+          userId: user.id,
+          title: "เเจ้งเตือนตั้งค่า Model ของผู้ใช้งาน",
+          message: `จำนวน Token ของ Model (${modelUseName}) จาก ${oldTokenText} เป็น ${newTokenText}`,
+          type: "INFO",
+          to: user.email,
+        });
+
+        notifyQueue.push({
+          locale: "en",
+          recipient_locale: user.locale,
+          loginAt: user.loginAt,
+          userId: user.id,
+          title: "User Model Settings Notification",
+          message: `Token count for model (${modelUseName}) has been changed from ${oldTokenText} to ${newTokenText}.`,
+          type: "INFO",
+          to: user.email,
+        });
+      }
+    }
+
+    // ---------------- โหลดกลับตามลำดับ input ----------------
+    const returnIds = [
+      ...new Set(resolvedRows.map((r) => Number(r.user.id)).filter(Boolean)),
+    ];
+
+    if (!returnIds.length) {
+      return [];
+    }
+
+    const updatedUsers = await User.findAll({
+      where: {
+        id: { [Op.in]: returnIds },
+      },
+      include: [
+        {
+          model: User_ai,
+          as: "user_ai",
+          required: false,
+          include: [
+            {
+              model: Ai,
+              as: "ai",
+              attributes: ["model_use_name", "model_name"],
+              required: false,
+            },
+          ],
+        },
+      ],
+      transaction: t,
+    });
+
+    const updatedUserMap = new Map(
+      updatedUsers.map((u) => [Number(u.id), u])
+    );
+
+    return returnIds.map((id) => updatedUserMap.get(id)).filter(Boolean);
+  });
+
+  // ---------------- ทำ log / notify หลัง transaction commit ----------------
+  for (const log of auditQueue) {
+    await auditLog(log);
+  }
+
+  for (const noti of notifyQueue) {
+    await notifyUser(noti);
+  }
+
+  return result;
 };
 
 exports.updateThemeAndLocale = async (id, input) => {

@@ -75,7 +75,7 @@ module.exports = {
 
     await queryInterface.sequelize.transaction(async (t) => {
       const [existing] = await queryInterface.sequelize.query(
-        `SELECT "model_name" FROM "ai" WHERE "model_name" IN (:names);`,
+        `SELECT "model_name" FROM "ai_backup" WHERE "model_name" IN (:names);`,
         {
           replacements: { names: candidates.map(c => c.model_name) },
           transaction: t,
@@ -86,13 +86,13 @@ module.exports = {
       const toInsert = candidates.filter(c => !existingSet.has(c.model_name));
 
       if (toInsert.length) {
-        await queryInterface.bulkInsert('ai', toInsert, { transaction: t });
+        await queryInterface.bulkInsert('ai_backup', toInsert, { transaction: t });
       }
     });
   },
 
   async down (queryInterface, Sequelize) {
-    await queryInterface.bulkDelete('ai', {
+    await queryInterface.bulkDelete('ai_backup', {
       model_name: ['gpt-4o', 'gemini-2.5-pro']
     }, {});
   }
