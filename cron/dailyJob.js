@@ -1512,7 +1512,7 @@ function startDailyJobs() {
   dailyUserCount();
 
   // ⚠️ ปกติไม่ต้องรันทันที (กันพลาด)
-  //syncUsersFromApi();
+  syncUsersFromApi();
   //syncAcademyFromApiOne();
   //syncAcademyFromApiTwoSix();
   //cleanupOldNotifications();
