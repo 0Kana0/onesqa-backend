@@ -1513,7 +1513,7 @@ function startDailyJobs() {
 
   // ⚠️ ปกติไม่ต้องรันทันที (กันพลาด)
   //syncUsersFromApi();
-  syncAcademyFromApiOne();
+  //syncAcademyFromApiOne();
   //syncAcademyFromApiTwoSix();
   //cleanupOldNotifications();
   //cleanupOldUserDailyActives();
